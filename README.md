@@ -15,7 +15,7 @@ For detailed documentation about the complete WDK ecosystem, visit [docs.wallet.
 - **EIP-7702 Delegation**: EOA becomes a smart account via delegation — no Safe contract, no address prediction
 - **Gasless Transactions**: Full paymaster integration for sponsored or ERC-20 token gas payment
 - **Auto Approval**: Paymaster token allowance is managed automatically, including USDT mainnet reset handling
-- **Provider-Agnostic**: Works with any ERC-4337 bundler/paymaster (Pimlico, Candide, etc.)
+- **Provider-Agnostic**: Works with any ERC-4337 bundler/paymaster (Candide, Pimlico, etc.)
 - **Failover Providers**: Pass an array of provider URLs or EIP-1193 instances to enable automatic round-robin failover
 - **Bare Runtime**: Supports both Node.js and [Bare](https://github.com/nicolo-ribaudo/bare) runtime
 - **EVM Derivation Paths**: Support for BIP-44 standard derivation paths for Ethereum (m/44'/60')
@@ -31,6 +31,11 @@ npm install @tetherto/wdk-wallet-evm-7702-gasless
 
 ## Quick Start
 
+The examples below use [Candide](https://dashboard.candide.dev) as the bundler and paymaster. Candide serves both from a single unified URL, so only `bundlerUrl` is needed — the paymaster is reached at the same endpoint, and the chain is selected by its chain ID in the path:
+
+- Public: `https://api.candide.dev/public/v3/{chainId}` — rate-limited, no key required
+- Authenticated: `https://api.candide.dev/api/v3/{chainId}/{apiKey}` — API key from the dashboard, for your own gas policies and higher rate limits
+
 ### Creating a Wallet (Sponsored Mode)
 
 ```javascript
@@ -39,9 +44,9 @@ import WalletManagerEvm7702Gasless from '@tetherto/wdk-wallet-evm-7702-gasless'
 const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
   provider: 'https://rpc.mevblocker.io/fast',
   delegationAddress: '0xe6Cae83BdE06E4c305530e199D7217f42808555B',
-  bundlerUrl: 'https://api.pimlico.io/v2/1/rpc?apikey=YOUR_KEY',
+  bundlerUrl: 'https://api.candide.dev/api/v3/1/YOUR_API_KEY',
   isSponsored: true,
-  sponsorshipPolicyId: 'sp_my_policy'
+  sponsorshipPolicyId: 'your_policy_id'
 })
 
 const account = await wallet.getAccount(0)
@@ -54,30 +59,31 @@ const address = await account.getAddress() // Returns the EOA address directly
 const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
   provider: 'https://rpc.mevblocker.io/fast',
   delegationAddress: '0xe6Cae83BdE06E4c305530e199D7217f42808555B',
-  bundlerUrl: 'https://api.pimlico.io/v2/1/rpc?apikey=YOUR_KEY',
-  paymasterAddress: '0x888888888888Ec68A58AB8094Cc1AD20Ba3D2402',
+  bundlerUrl: 'https://api.candide.dev/api/v3/1/YOUR_API_KEY',
+  paymasterAddress: '0xa8151918eac3818deb713d3dbbb7930329fe86ed', // Candide, Ethereum mainnet, EntryPoint v0.8
   paymasterToken: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' }, // USDT
-  transferMaxFee: 100000000000000n,
-  transactionMaxFee: 100000000000000n
+  transferMaxFee: 100000n, // 0.1 USDT, in the paymaster token's base units
+  transactionMaxFee: 100000n
 })
 ```
 
-### Using Candide
+### Using Pimlico
 
-Candide serves the bundler and paymaster from a single unified URL, so you only need `bundlerUrl` — the paymaster is reached at the same endpoint. The chain is selected by its chain ID in the path. Use the public endpoint (rate-limited, no key required) or an authenticated endpoint with an API key from the [dashboard](https://dashboard.candide.dev):
-
-- Public: `https://api.candide.dev/public/v3/{chainId}`
-- Authenticated: `https://api.candide.dev/api/v3/{chainId}/{apiKey}`
+Pimlico is the tested alternative. One URL serves both the bundler and the paymaster, with the API key in the query string, and its token paymaster contract differs from Candide's:
 
 ```javascript
 const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
   provider: 'https://rpc.mevblocker.io/fast',
   delegationAddress: '0xe6Cae83BdE06E4c305530e199D7217f42808555B',
-  bundlerUrl: 'https://api.candide.dev/api/v3/1/YOUR_API_KEY',
-  isSponsored: true,
-  sponsorshipPolicyId: 'your_policy_id'
+  bundlerUrl: 'https://api.pimlico.io/v2/1/rpc?apikey=YOUR_KEY',
+  paymasterAddress: '0x888888888888Ec68A58AB8094Cc1AD20Ba3D2402', // Pimlico, Ethereum mainnet, EntryPoint v0.8
+  paymasterToken: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' }, // USDT
+  transferMaxFee: 100000n, // 0.1 USDT, in the paymaster token's base units
+  transactionMaxFee: 100000n
 })
 ```
+
+`paymasterAddress` is optional and specific to a provider, chain and EntryPoint version. Omit it to accept the address the paymaster RPC reports, or confirm the expected contract with your provider before pinning it.
 
 ### Wrapping an Existing WalletAccountEvm
 
@@ -183,7 +189,7 @@ await account.sendTransaction(tx, { nonceKey: 1n })
 Both options can also be set at construction (`new WalletManagerEvm7702Gasless(seed, { ..., parallel: true })`) and overridden per call. Precedence: `nonceKey` > `parallel` > default (key 0).
 
 **Notes:**
-- **Requires a bundler that accepts parallel keys** (Pimlico and Candide both do). There is no SDK-side lane limit; respect your bundler's cap (e.g. Pimlico allows up to 100 parallel).
+- **Requires a bundler that accepts parallel keys** (Candide and Pimlico both do). There is no SDK-side lane limit; respect your bundler's cap (e.g. Pimlico allows up to 100 parallel).
 - **Per-sender mempool cap (≈4).** Per [ERC-7562](https://eips.ethereum.org/EIPS/eip-7562), a standard bundler mempool holds at most **4** in-flight UserOperations from a single sender at once (`SAME_SENDER_MEMPOOL_COUNT = 4`). Firing more than 4 lanes concurrently may be rejected until earlier ops are mined. This is a mempool validation limit, separate from parallel-key support, and can be raised by the bundler operator if needed.
 - **Delegate first.** The first UserOperation from a fresh account carries the EIP-7702 delegation authorization, which is tied to the account's EOA nonce. Let one send land (delegating the account) before firing concurrent lanes, so parallel sends don't race on the initial delegation.
 - `parallel: true` mints a **new** EntryPoint nonce slot per send (a one-time gas cost per lane, paid by the paymaster; permanent state). For repeated parallel workloads, reuse a fixed set of lanes with `nonceKey` labels instead of a fresh key every time.
@@ -396,8 +402,8 @@ This module uses standard ERC-4337 bundler RPCs (`eth_sendUserOperation`, `eth_e
 
 | Provider | Sponsored | Paymaster Token | Status |
 |----------|-----------|-----------------|--------|
+| **Candide** (default in the examples) | Yes | Yes | Fully working — earlier gas-estimation issues fixed upstream (re-validated 2026-08) |
 | **Pimlico** | Yes | Yes | Fully working — all flows tested on mainnet and Sepolia |
-| **Candide** | Yes | Yes | Fully working — earlier gas-estimation issues fixed upstream (re-validated 2026-08) |
 
 ### Not Compatible
 
