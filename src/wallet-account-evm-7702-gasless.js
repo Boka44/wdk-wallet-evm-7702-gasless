@@ -365,7 +365,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    */
   async toReadOnlyAccount () {
     if (!this._evm7702GaslessReadOnlyAccount) {
-      this._evm7702GaslessReadOnlyAccount = new WalletAccountReadOnlyEvm7702Gasless(this._address, this._config)
+      this._evm7702GaslessReadOnlyAccount = new WalletAccountReadOnlyEvm7702Gasless(this._address, { ...this._config, provider: this._provider })
     }
     return this._evm7702GaslessReadOnlyAccount
   }
@@ -380,7 +380,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
 
   /** @private */
   async _getAuthorization (config = this._config) {
-    const delegatedTo = await JsonRpcNode.from(this._provider).getDelegatedAddress(this._address)
+    const delegatedTo = await JsonRpcNode.from(this._eip1193Provider).getDelegatedAddress(this._address)
 
     if (delegatedTo &&
         delegatedTo.toLowerCase() === config.delegationAddress.toLowerCase()) {
@@ -508,7 +508,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
     const cached = this._consumeCachedQuote(tx, config)
     if (!cached?.sponsoredOp) return cached
 
-    const onChainNonce = await fetchAccountNonce(this._provider, ENTRYPOINT_V8, this._address)
+    const onChainNonce = await fetchAccountNonce(this._eip1193Provider, ENTRYPOINT_V8, this._address)
 
     return cached.sponsoredOp.nonce === onChainNonce ? cached : null
   }
@@ -525,7 +525,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
           throw new Error('nonceKey must be within the uint192 range (0 to 2^192 - 1).')
         }
       }
-      return await fetchAccountNonce(this._provider, ENTRYPOINT_V8, this._address, key)
+      return await fetchAccountNonce(this._eip1193Provider, ENTRYPOINT_V8, this._address, key)
     }
 
     if (config.parallel) {
