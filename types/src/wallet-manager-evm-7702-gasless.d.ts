@@ -21,10 +21,10 @@ export default class WalletManagerEvm7702Gasless extends WalletManager {
      * Returns the configuration used to create accounts, with the manager's shared provider injected
      * last so it is not overwritten by the original `provider` option.
      *
-     * @protected
+     * @private
      * @returns {Evm7702GaslessWalletConfig} The account configuration.
      */
-    protected _accountConfig(): Evm7702GaslessWalletConfig;
+    private _accountConfig;
     /**
      * Returns the wallet account at a specific index (see [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)).
      *

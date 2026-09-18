@@ -60,7 +60,7 @@ export default class WalletManagerEvm7702Gasless extends WalletManager {
    * Returns the configuration used to create accounts, with the manager's shared provider injected
    * last so it is not overwritten by the original `provider` option.
    *
-   * @protected
+   * @private
    * @returns {Evm7702GaslessWalletConfig} The account configuration.
    */
   _accountConfig () {
