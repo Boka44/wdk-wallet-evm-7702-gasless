@@ -15,7 +15,7 @@ For detailed documentation about the complete WDK ecosystem, visit [docs.wallet.
 - **EIP-7702 Delegation**: EOA becomes a smart account via delegation — no Safe contract, no address prediction
 - **Gasless Transactions**: Full paymaster integration for sponsored or ERC-20 token gas payment
 - **Auto Approval**: Paymaster token allowance is managed automatically, including USDT mainnet reset handling
-- **Provider-Agnostic**: Works with any ERC-4337 bundler/paymaster (Pimlico, Candide, etc.)
+- **Provider-Agnostic**: Works with any ERC-4337 bundler/paymaster (Candide, Pimlico, etc.)
 - **Failover Providers**: Pass an array of provider URLs or EIP-1193 instances to enable automatic round-robin failover
 - **Bare Runtime**: Supports both Node.js and [Bare](https://github.com/nicolo-ribaudo/bare) runtime
 - **EVM Derivation Paths**: Support for BIP-44 standard derivation paths for Ethereum (m/44'/60')
@@ -31,6 +31,11 @@ npm install @tetherto/wdk-wallet-evm-7702-gasless
 
 ## Quick Start
 
+The examples below use [Candide](https://dashboard.candide.dev) as the bundler and paymaster. Candide serves both from a single unified URL, so only `bundlerUrl` is needed — the paymaster is reached at the same endpoint, and the chain is selected by its chain ID in the path:
+
+- Public: `https://api.candide.dev/public/v3/{chainId}` — rate-limited, no key required
+- Authenticated: `https://api.candide.dev/api/v3/{chainId}/{apiKey}` — API key from the dashboard, for your own gas policies and higher rate limits
+
 ### Creating a Wallet (Sponsored Mode)
 
 ```javascript
@@ -39,9 +44,9 @@ import WalletManagerEvm7702Gasless from '@tetherto/wdk-wallet-evm-7702-gasless'
 const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
   provider: 'https://rpc.mevblocker.io/fast',
   delegationAddress: '0xe6Cae83BdE06E4c305530e199D7217f42808555B',
-  bundlerUrl: 'https://api.pimlico.io/v2/1/rpc?apikey=YOUR_KEY',
+  bundlerUrl: 'https://api.candide.dev/api/v3/1/YOUR_API_KEY',
   isSponsored: true,
-  sponsorshipPolicyId: 'sp_my_policy'
+  sponsorshipPolicyId: 'your_policy_id'
 })
 
 const account = await wallet.getAccount(0)
@@ -54,30 +59,31 @@ const address = await account.getAddress() // Returns the EOA address directly
 const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
   provider: 'https://rpc.mevblocker.io/fast',
   delegationAddress: '0xe6Cae83BdE06E4c305530e199D7217f42808555B',
-  bundlerUrl: 'https://api.pimlico.io/v2/1/rpc?apikey=YOUR_KEY',
-  paymasterAddress: '0x888888888888Ec68A58AB8094Cc1AD20Ba3D2402',
+  bundlerUrl: 'https://api.candide.dev/api/v3/1/YOUR_API_KEY',
+  paymasterAddress: '0xa8151918eac3818deb713d3dbbb7930329fe86ed', // Candide, Ethereum mainnet, EntryPoint v0.8
   paymasterToken: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' }, // USDT
-  transferMaxFee: 100000000000000n,
-  transactionMaxFee: 100000000000000n
+  transferMaxFee: 100000n, // 0.1 USDT, in the paymaster token's base units
+  transactionMaxFee: 100000n
 })
 ```
 
-### Using Candide
+### Using Pimlico
 
-Candide serves the bundler and paymaster from a single unified URL, so you only need `bundlerUrl` — the paymaster is reached at the same endpoint. The chain is selected by its chain ID in the path. Use the public endpoint (rate-limited, no key required) or an authenticated endpoint with an API key from the [dashboard](https://dashboard.candide.dev):
-
-- Public: `https://api.candide.dev/public/v3/{chainId}`
-- Authenticated: `https://api.candide.dev/api/v3/{chainId}/{apiKey}`
+Pimlico is the tested alternative. One URL serves both the bundler and the paymaster, with the API key in the query string, and its token paymaster contract differs from Candide's:
 
 ```javascript
 const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
   provider: 'https://rpc.mevblocker.io/fast',
   delegationAddress: '0xe6Cae83BdE06E4c305530e199D7217f42808555B',
-  bundlerUrl: 'https://api.candide.dev/api/v3/1/YOUR_API_KEY',
-  isSponsored: true,
-  sponsorshipPolicyId: 'your_policy_id'
+  bundlerUrl: 'https://api.pimlico.io/v2/1/rpc?apikey=YOUR_KEY',
+  paymasterAddress: '0x888888888888Ec68A58AB8094Cc1AD20Ba3D2402', // Pimlico, Ethereum mainnet, EntryPoint v0.8
+  paymasterToken: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' }, // USDT
+  transferMaxFee: 100000n, // 0.1 USDT, in the paymaster token's base units
+  transactionMaxFee: 100000n
 })
 ```
+
+`paymasterAddress` is optional and specific to a provider, chain and EntryPoint version. Omit it to accept the address the paymaster RPC reports, or confirm the expected contract with your provider before pinning it.
 
 ### Wrapping an Existing WalletAccountEvm
 
@@ -183,7 +189,7 @@ await account.sendTransaction(tx, { nonceKey: 1n })
 Both options can also be set at construction (`new WalletManagerEvm7702Gasless(seed, { ..., parallel: true })`) and overridden per call. Precedence: `nonceKey` > `parallel` > default (key 0).
 
 **Notes:**
-- **Requires a bundler that accepts parallel keys** (Pimlico and Candide both do). There is no SDK-side lane limit; respect your bundler's cap (e.g. Pimlico allows up to 100 parallel).
+- **Requires a bundler that accepts parallel keys** (Candide and Pimlico both do). There is no SDK-side lane limit; respect your bundler's cap (e.g. Pimlico allows up to 100 parallel).
 - **Per-sender mempool cap (≈4).** Per [ERC-7562](https://eips.ethereum.org/EIPS/eip-7562), a standard bundler mempool holds at most **4** in-flight UserOperations from a single sender at once (`SAME_SENDER_MEMPOOL_COUNT = 4`). Firing more than 4 lanes concurrently may be rejected until earlier ops are mined. This is a mempool validation limit, separate from parallel-key support, and can be raised by the bundler operator if needed.
 - **Delegate first.** The first UserOperation from a fresh account carries the EIP-7702 delegation authorization, which is tied to the account's EOA nonce. Let one send land (delegating the account) before firing concurrent lanes, so parallel sends don't race on the initial delegation.
 - `parallel: true` mints a **new** EntryPoint nonce slot per send (a one-time gas cost per lane, paid by the paymaster; permanent state). For repeated parallel workloads, reuse a fixed set of lanes with `nonceKey` labels instead of a fresh key every time.
@@ -249,7 +255,7 @@ wallet.dispose()  // Dispose all accounts
 |-------|------|-------------|
 | `provider` | `string \| Eip1193Provider \| (string \| Eip1193Provider)[]` | RPC endpoint URL, EIP-1193 provider instance, or failover list mixing both formats |
 | `bundlerUrl` | `string` | URL of the ERC-4337 bundler service |
-| `delegationAddress` | `string` | Address of the smart account implementation to delegate to |
+| `delegationAddress` | `string` | Address of the smart account implementation to delegate to. Must be an implementation built for the configured `entryPointVersion` |
 
 ### Optional Common Fields
 
@@ -257,6 +263,33 @@ wallet.dispose()  // Dispose all accounts
 |-------|------|-------------|
 | `paymasterUrl` | `string` | URL of the paymaster service, when it differs from `bundlerUrl`. Omit when one URL serves both the bundler and paymaster (e.g. Candide, Pimlico) |
 | `retries` | `number` | Additional retry attempts for provider failover arrays. Total attempts are `1 + retries`. Defaults to `3` |
+| `chainId` | `number` | When set, UserOperation build and sign assert the provider reports this chain and throw `ConfigurationError` on mismatch. When omitted, the provider's chain is trusted |
+| `entryPointVersion` | `'0.8' \| '0.9'` | ERC-4337 EntryPoint version the account operates under. Selects the EntryPoint address and the matching account implementation together. Defaults to `'0.8'` |
+
+### EntryPoint Version
+
+The account runs on ERC-4337 EntryPoint **v0.8 by default**. Set `entryPointVersion` to `'0.9'` to target a bundler/paymaster that serves EntryPoint v0.9 instead:
+
+```javascript
+const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
+  provider: 'https://eth.llamarpc.com',
+  bundlerUrl: 'https://your-bundler.example/rpc',
+  entryPointVersion: '0.9',
+  delegationAddress: '0xa46cc63eBF4Bd77888AA327837d20b23A63a56B5',
+  isSponsored: true
+})
+```
+
+`entryPointVersion` selects the EntryPoint address and the account implementation together. The implementation fixes the EIP-712 signing domain, while the EntryPoint address is where nonces are read and user operations are submitted, so the two are never configured independently.
+
+| Version | EntryPoint | Reference `delegationAddress` |
+|---------|------------|-------------------------------|
+| `'0.8'` (default) | `0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108` | `0xe6Cae83BdE06E4c305530e199D7217f42808555B` |
+| `'0.9'` | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` | `0xa46cc63eBF4Bd77888AA327837d20b23A63a56B5` |
+
+A delegation implementation only accepts user operations from the EntryPoint it was built for, so pairing one version's reference implementation with the other version is rejected at construction with a `ConfigurationError`. A custom `delegationAddress` is accepted on either version and is not verified — check yourself that it targets the configured EntryPoint.
+
+Omitting `entryPointVersion` preserves the previous behavior exactly: the same EntryPoint, delegation implementation, signatures and nonces as before the option existed.
 
 ### Sponsored Mode
 
@@ -369,8 +402,8 @@ This module uses standard ERC-4337 bundler RPCs (`eth_sendUserOperation`, `eth_e
 
 | Provider | Sponsored | Paymaster Token | Status |
 |----------|-----------|-----------------|--------|
+| **Candide** (default in the examples) | Yes | Yes | Fully working — earlier gas-estimation issues fixed upstream (re-validated 2026-08) |
 | **Pimlico** | Yes | Yes | Fully working — all flows tested on mainnet and Sepolia |
-| **Candide** | Yes | Yes | Fully working — earlier gas-estimation issues fixed upstream (re-validated 2026-08) |
 
 ### Not Compatible
 
@@ -386,7 +419,7 @@ This module uses standard ERC-4337 bundler RPCs (`eth_sendUserOperation`, `eth_e
 - **Private Key Management**: The package handles private keys internally via memory-safe buffers (`Uint8Array`) that are zeroed on `dispose()`
 - **Memory Cleanup**: Use the `dispose()` method to clear private keys from memory when done
 - **Fee Limits**: Set `transferMaxFee` and `transactionMaxFee` to prevent excessive transaction fees
-- **Delegation Awareness**: The EOA delegates execution to a smart account implementation — verify the `delegationAddress` is trusted and audited
+- **Delegation Awareness**: The EOA delegates execution to a smart account implementation — verify the `delegationAddress` is trusted and audited, and that it is built for the configured `entryPointVersion`
 - **Bundler Security**: Use trusted bundler services and validate UserOperation responses
 - **Contract Interactions**: Verify contract addresses and token decimals before transfers
 
