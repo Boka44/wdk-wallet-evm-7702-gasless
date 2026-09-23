@@ -43,17 +43,17 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
      * so accounts do not open their own connection.
      *
      * @protected
-     * @type {Provider | undefined}
+     * @type {Provider}
      */
-    protected _provider: Provider | undefined;
+    protected _provider: Provider;
     /**
-     * The EIP-1193 view of {@link _provider} that abstractionkit requires. Built once and backed
-     * by the same underlying connection as {@link _provider}.
+     * The EIP-1193 view of {@link _provider} that abstractionkit requires. Backed by the same
+     * underlying connection as {@link _provider}.
      *
      * @protected
-     * @type {Eip1193Provider | undefined}
+     * @type {Eip1193Provider}
      */
-    protected _eip1193Provider: Eip1193Provider | undefined;
+    protected _eip1193Provider: Eip1193Provider;
     /**
      * The chain id.
      *
@@ -183,10 +183,10 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
      *
      * @protected
      * @param {Omit<Evm7702GaslessWalletConfig, 'transferMaxFee' | 'transactionMaxFee'>} config - The configuration object.
-     * @param {Provider} [provider] - The shared ethers provider built from `config`.
-     * @returns {Eip1193Provider | undefined} The EIP-1193 provider, or undefined if none is configured.
+     * @param {Provider} provider - The shared ethers provider built from `config`.
+     * @returns {Eip1193Provider} The EIP-1193 provider that reuses the given connection.
      */
-    protected _buildEip1193Provider(config: Omit<Evm7702GaslessWalletConfig, "transferMaxFee" | "transactionMaxFee">, provider?: Provider): Eip1193Provider | undefined;
+    protected _buildEip1193Provider(config: Omit<Evm7702GaslessWalletConfig, "transferMaxFee" | "transactionMaxFee">, provider: Provider): Eip1193Provider;
     /**
      * Validates the configuration to ensure all required fields are present.
      *

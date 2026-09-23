@@ -158,7 +158,7 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
      * so accounts do not open their own connection.
      *
      * @protected
-     * @type {Provider | undefined}
+     * @type {Provider}
      */
     this._provider = WalletAccountReadOnlyEvm7702Gasless._buildProvider(this._config)
 
@@ -167,7 +167,7 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
      * by the same underlying connection as {@link _provider}.
      *
      * @protected
-     * @type {Eip1193Provider | undefined}
+     * @type {Eip1193Provider}
      */
     this._eip1193Provider = this._buildEip1193Provider(this._config, this._provider)
 
@@ -445,14 +445,10 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
    *
    * @protected
    * @param {Omit<Evm7702GaslessWalletConfig, 'transferMaxFee' | 'transactionMaxFee'>} config - The configuration object.
-   * @param {Provider} [provider] - The shared ethers provider built from `config`.
-   * @returns {Eip1193Provider | undefined} The EIP-1193 provider, or undefined if none is configured.
+   * @param {Provider} provider - The shared ethers provider built from `config`.
+   * @returns {Eip1193Provider} The EIP-1193 provider that reuses the given connection.
    */
   _buildEip1193Provider (config, provider) {
-    if (!provider) {
-      return undefined
-    }
-
     const { provider: configured } = config
     const source = configured && typeof configured.request === 'function' ? configured : provider
 
