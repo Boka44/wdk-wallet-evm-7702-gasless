@@ -477,9 +477,9 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
   /**
    * Builds the single shared ethers provider from the configuration: a url string ->
    * `JsonRpcProvider`, an already-built ethers provider -> reused as-is, an EIP-1193 provider ->
-   * wrapped in a `BrowserProvider`, and a list of the above -> a `FailoverProvider` that only
-   * fails over on connectivity errors. A manager builds one instance and shares it with every
-   * account.
+   * wrapped in a `BrowserProvider`, and a list of the above -> a `FailoverProvider` (built at the
+   * EIP-1193 level so it only fails over on connectivity errors) wrapped once in a `BrowserProvider`.
+   * A manager builds one instance and shares it with every account.
    *
    * @protected
    * @param {Omit<Evm7702GaslessWalletConfig, 'transferMaxFee' | 'transactionMaxFee'>} [config] - The configuration object.
@@ -511,11 +511,19 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
         shouldRetryOn: (error) => [...CONNECTIVITY_ERROR_CODES].some((code) => isError(error, code))
       })
 
+      // Add each provider at the EIP-1193 level so connectivity errors reach `shouldRetryOn` with
+      // their original codes intact. Wrapping an entry in a `BrowserProvider` here would re-code its
+      // errors as `UNKNOWN_ERROR` and defeat the connectivity check, so we only wrap the whole
+      // failover once (below) to keep `_provider` an ethers provider. `_asEip1193` returns an
+      // EIP-1193 provider untouched and adapts a url (via `JsonRpcProvider`) or ethers provider
+      // through `send`.
       for (const entry of provider) {
-        failoverProvider.addProvider(toOption(entry))
+        const source = typeof entry === 'string' ? new JsonRpcProvider(entry) : entry
+
+        failoverProvider.addProvider(WalletAccountReadOnlyEvm7702Gasless._asEip1193(source))
       }
 
-      return failoverProvider.initialize()
+      return new BrowserProvider(failoverProvider.initialize())
     }
 
     if (provider) {
@@ -582,7 +590,7 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
    */
   async _getChainId () {
     if (this._chainId === undefined) {
-      const chainId = BigInt(await sendJsonRpcRequest(this._provider, 'eth_chainId', []))
+      const chainId = BigInt(await sendJsonRpcRequest(this._eip1193Provider, 'eth_chainId', []))
 
       if (this._config.chainId !== undefined && chainId !== BigInt(this._config.chainId)) {
         throw new ConfigurationError(
