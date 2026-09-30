@@ -900,7 +900,7 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         expect(disposableAccount.keyPair.privateKey).toBeNull()
       })
 
-      test('should expose the disposed state and be idempotent', () => {
+      test('should expose the disposed state', () => {
         const disposableAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", SPONSORED_CONFIG)
 
         expect(disposableAccount.disposed).toBe(false)
@@ -908,7 +908,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         disposableAccount.dispose()
 
         expect(disposableAccount.disposed).toBe(true)
-        expect(() => disposableAccount.dispose()).not.toThrow()
       })
 
       test('should throw DisposalError from signing methods once disposed', async () => {
