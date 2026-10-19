@@ -97,7 +97,7 @@ const wallet = new WalletManagerEvm7702Gasless(seedPhrase, {
 })
 ```
 
-`paymasterAddress` is optional and specific to a provider, chain and EntryPoint version. Omit it to accept the address the paymaster RPC reports, or confirm the expected contract with your provider before pinning it.
+In token-paymaster mode, `paymasterAddress` is required and specific to a provider, chain and EntryPoint version. The wallet checks that the address returned by the paymaster RPC matches this configured address before signing. Confirm the expected contract with your provider.
 
 ### Wrapping an Existing WalletAccountEvm
 
@@ -316,7 +316,7 @@ Omitting `entryPointVersion` preserves the previous behavior exactly: the same E
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `paymasterAddress` | `string` (optional) | Pin on the paymaster smart contract address. When omitted, it is derived from the paymaster RPC (`pm_supportedERC20Tokens` for Candide, `pimlico_getTokenQuotes` for Pimlico) |
+| `paymasterAddress` | `string` (required for token-paymaster mode) | Paymaster smart contract address. The RPC response must match this pin before the wallet signs. |
 | `paymasterToken` | `{ address: string }` | ERC-20 token used for gas payment |
 | `transferMaxFee` | `number \| bigint` (optional) | Maximum fee for transfer operations |
 | `transactionMaxFee` | `number \| bigint` (optional) | Maximum fee for sendTransaction and signTransaction operations |

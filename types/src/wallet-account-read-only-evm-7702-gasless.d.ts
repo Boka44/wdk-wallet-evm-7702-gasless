@@ -430,9 +430,9 @@ export type Evm7702GaslessPaymasterTokenConfig = {
      */
     isSponsored?: false;
     /**
-     * - Optional pin on the paymaster smart contract address. When omitted, it's derived from the paymaster RPC (pm_supportedERC20Tokens for Candide, pimlico_getTokenQuotes for Pimlico).
+     * - The paymaster smart contract address to require from the paymaster RPC.
      */
-    paymasterAddress?: string;
+    paymasterAddress: string;
     /**
      * - The paymaster token configuration.
      */
