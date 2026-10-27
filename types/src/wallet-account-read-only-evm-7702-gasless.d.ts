@@ -318,7 +318,7 @@ export type Evm7702GaslessTransactionDetails = {
 };
 export type Eip7702AuthorizationOverride = {
     /**
-     * - The chain id the authorization was signed for.
+     * - The chain id the authorization is for.
      */
     chainId: bigint;
     /**
@@ -326,25 +326,25 @@ export type Eip7702AuthorizationOverride = {
      */
     address: string;
     /**
-     * - The EOA's transaction nonce at signing time.
+     * - The EOA's transaction nonce at signing time. Omit it, together with the signature fields, for an unsigned authorization.
      */
-    nonce: bigint;
+    nonce?: bigint;
     /**
      * - The y-parity bit of the signature, encoded as `'0x0'` or `'0x1'`.
      */
-    yParity: string;
+    yParity?: string;
     /**
      * - The r component of the ECDSA signature (32-byte hex).
      */
-    r: string;
+    r?: string;
     /**
      * - The s component of the ECDSA signature (32-byte hex).
      */
-    s: string;
+    s?: string;
 };
 export type BuildSponsoredUserOperationOverrides = {
     /**
-     * - Pre-signed EIP-7702 authorization tuple to include in the user operation.
+     * - EIP-7702 authorization tuple to include in the user operation. Pre-signed, or unsigned (no `nonce`, `yParity`, `r` or `s`) when the operation is only used to estimate gas, in which case abstractionkit fills in placeholders.
      */
     eip7702Auth?: Eip7702AuthorizationOverride;
     /**

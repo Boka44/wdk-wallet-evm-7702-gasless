@@ -608,11 +608,14 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
 
     describe('quoteSendTransaction', () => {
       const QUOTED_TOKEN_FEE = 500_000n
+      const TX = { to: ACCOUNT.address, value: 1, data: '0x' }
 
-      const spyOnSigning = (pmAccount) => ({
-        signAuthorization: jest.spyOn(pmAccount._ownerAccount, 'signAuthorization'),
-        sign: jest.spyOn(pmAccount._ownerAccount, 'sign'),
-        signTypedData: jest.spyOn(pmAccount._ownerAccount, 'signTypedData')
+      const createOwner = () => new actualWalletEvm.WalletAccountEvm(SEED_PHRASE, "0'/0/0", { provider: EIP1193_PROVIDER })
+
+      const spyOnSigning = (owner) => ({
+        signAuthorization: jest.spyOn(owner, 'signAuthorization'),
+        sign: jest.spyOn(owner, 'sign'),
+        signTypedData: jest.spyOn(owner, 'signTypedData')
       })
 
       const expectNothingSigned = (spies) => {
@@ -629,10 +632,11 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       })
 
       test('should quote an undeployed EOA with an unsigned authorization and sign nothing', async () => {
-        const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", PAYMASTER_TOKEN_CONFIG)
-        const spies = spyOnSigning(pmAccount)
+        const owner = createOwner()
+        const spies = spyOnSigning(owner)
+        const pmAccount = new WalletAccountEvm7702Gasless(owner, PAYMASTER_TOKEN_CONFIG)
 
-        const { fee } = await pmAccount.quoteSendTransaction({ to: ACCOUNT.address, value: 1, data: '0x' })
+        const { fee } = await pmAccount.quoteSendTransaction(TX)
 
         expect(fee).toBe(QUOTED_TOKEN_FEE)
         expect(createUserOperationMock).toHaveBeenCalledTimes(1)
@@ -646,8 +650,9 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       })
 
       test('quoteTransfer should quote an undeployed EOA without signing anything', async () => {
-        const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", PAYMASTER_TOKEN_CONFIG)
-        const spies = spyOnSigning(pmAccount)
+        const owner = createOwner()
+        const spies = spyOnSigning(owner)
+        const pmAccount = new WalletAccountEvm7702Gasless(owner, PAYMASTER_TOKEN_CONFIG)
 
         const { fee } = await pmAccount.quoteTransfer({
           token: USDT_MAINNET_ADDRESS,
@@ -668,13 +673,11 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
 
       test('should not sign an authorization for a delegation address overridden per call', async () => {
         const OTHER_DELEGATION_ADDRESS = '0x1111111111111111111111111111111111111111'
-        const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", PAYMASTER_TOKEN_CONFIG)
-        const spies = spyOnSigning(pmAccount)
+        const owner = createOwner()
+        const spies = spyOnSigning(owner)
+        const pmAccount = new WalletAccountEvm7702Gasless(owner, PAYMASTER_TOKEN_CONFIG)
 
-        await pmAccount.quoteSendTransaction(
-          { to: ACCOUNT.address, value: 1, data: '0x' },
-          { delegationAddress: OTHER_DELEGATION_ADDRESS }
-        )
+        await pmAccount.quoteSendTransaction(TX, { delegationAddress: OTHER_DELEGATION_ADDRESS })
 
         expect(createUserOperationMock.mock.calls[0][3].eip7702Auth).toEqual({
           chainId: 1n,
@@ -685,50 +688,63 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         pmAccount.dispose()
       })
 
-      test('should not cache a quote built with an unsigned authorization', async () => {
-        const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", PAYMASTER_TOKEN_CONFIG)
+      test('should not reuse the quoted operation on send if the account became delegated after quoting', async () => {
+        let code = '0x'
+        const provider = {
+          request: async ({ method }) => {
+            if (method === 'eth_chainId') return '0x1'
+            if (method === 'eth_getCode') return code
+            if (method === 'eth_getTransactionCount') return '0x0'
+            if (method === 'net_version') return '1'
+            return null
+          }
+        }
+        const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", { ...PAYMASTER_TOKEN_CONFIG, provider })
 
-        await pmAccount.quoteSendTransaction({ to: ACCOUNT.address, value: 1, data: '0x' })
+        await pmAccount.quoteSendTransaction(TX)
 
-        expect(pmAccount._quoteCache.size).toBe(0)
+        expect(createUserOperationMock).toHaveBeenCalledTimes(1)
+        expect(createPaymasterUserOperationMock).toHaveBeenCalledTimes(1)
 
-        pmAccount.dispose()
-      })
+        code = DELEGATED_CODE
 
-      test('should cache a quote for an already-delegated EOA', async () => {
-        const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", {
-          ...PAYMASTER_TOKEN_CONFIG,
-          provider: DELEGATED_PROVIDER
-        })
+        await pmAccount.sendTransaction(TX)
 
-        await pmAccount.quoteSendTransaction({ to: ACCOUNT.address, value: 1, data: '0x' })
-
-        expect(pmAccount._quoteCache.size).toBe(1)
+        // The operation quoted with the placeholder authorization is rebuilt, not reused.
+        expect(createUserOperationMock).toHaveBeenCalledTimes(2)
+        expect(createPaymasterUserOperationMock).toHaveBeenCalledTimes(2)
 
         pmAccount.dispose()
       })
 
       test('should still send with a real signed authorization after quoting an undeployed EOA', async () => {
-        const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", PAYMASTER_TOKEN_CONFIG)
-        const signAuthorizationSpy = jest.spyOn(pmAccount._ownerAccount, 'signAuthorization')
-        const TX = { to: ACCOUNT.address, value: 1, data: '0x' }
+        const expectedOwner = createOwner()
+        const wdkAuth = await expectedOwner.signAuthorization({ address: PAYMASTER_TOKEN_CONFIG.delegationAddress })
+        const expectedAuth = {
+          chainId: BigInt(wdkAuth.chainId),
+          address: wdkAuth.address,
+          nonce: BigInt(wdkAuth.nonce),
+          yParity: Number(wdkAuth.signature.yParity) === 0 ? '0x0' : '0x1',
+          r: wdkAuth.signature.r,
+          s: wdkAuth.signature.s
+        }
+        expectedOwner.dispose()
+
+        const owner = createOwner()
+        const signAuthorizationSpy = jest.spyOn(owner, 'signAuthorization')
+        const pmAccount = new WalletAccountEvm7702Gasless(owner, PAYMASTER_TOKEN_CONFIG)
 
         await pmAccount.quoteSendTransaction(TX)
         expect(signAuthorizationSpy).not.toHaveBeenCalled()
 
         await pmAccount.sendTransaction(TX)
 
-        expect(signAuthorizationSpy).toHaveBeenCalledTimes(1)
+        expect(signAuthorizationSpy).toHaveBeenCalledWith({ address: PAYMASTER_TOKEN_CONFIG.delegationAddress })
         expect(createUserOperationMock).toHaveBeenCalledTimes(2)
-
-        const sentAuth = createUserOperationMock.mock.calls[1][3].eip7702Auth
-        expect(sentAuth.r).toMatch(/^0x[0-9a-f]{64}$/)
-        expect(sentAuth.s).toMatch(/^0x[0-9a-f]{64}$/)
-        expect(sentAuth.nonce).toBe(0n)
+        expect(createUserOperationMock.mock.calls[1][3].eip7702Auth).toEqual(expectedAuth)
 
         pmAccount.dispose()
       })
-
       test('should omit the EIP-7702 authorization when quoting for an already-delegated EOA', async () => {
         createPaymasterUserOperationMock.mockResolvedValue({
           userOperation: { ...DUMMY_SPONSORED_OP },
@@ -786,12 +802,10 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       test('should assert the provider chain before building the authorization', async () => {
         // sendJsonRpcRequestMock answers eth_chainId with 0x1 (mainnet).
         const pmAccount = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", { ...PAYMASTER_TOKEN_CONFIG, chainId: 137 })
-        const authSpy = jest.spyOn(pmAccount, '_getQuoteAuthorization')
 
         await expect(pmAccount.quoteSendTransaction({ to: ACCOUNT.address, value: 1, data: '0x' }))
           .rejects.toThrow(new ConfigurationError('Provider is on chain 1 but the wallet is configured for chain 137'))
 
-        expect(authSpy).not.toHaveBeenCalled()
         expect(createUserOperationMock).not.toHaveBeenCalled()
       })
     })
@@ -904,7 +918,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         await expect(mismatched.sendTransaction({ to: ACCOUNT.address, value: 1, data: '0x' }))
           .rejects.toThrow(new ConfigurationError('Provider is on chain 1 but the wallet is configured for chain 137'))
 
-        expect(authSpy).not.toHaveBeenCalled()
         expect(createUserOperationMock).not.toHaveBeenCalled()
         expect(sendUserOperationMock).not.toHaveBeenCalled()
       })

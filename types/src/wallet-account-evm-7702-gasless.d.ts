@@ -177,6 +177,10 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      */
     dispose(): void;
     /** @private */
+    private _isDelegatedTo;
+    /** @private */
+    private _getQuoteAuthorization;
+    /** @private */
     private _getAuthorization;
     /** @private */
     private _prepareForSend;

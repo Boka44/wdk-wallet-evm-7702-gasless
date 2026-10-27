@@ -270,7 +270,9 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
     }
 
     // A quote must not sign: it is excluded from policy evaluation, so a real EIP-7702
-    // authorization signed here would never be seen by the policy engine.
+    // authorization signed here would never be seen by the policy engine. The bundler only
+    // needs the delegation target and chain to simulate the account, so the authorization
+    // is left unsigned and abstractionkit fills in placeholder signature fields.
     const eip7702Auth = await this._getQuoteAuthorization(mergedConfig)
     const result = await this._getUserOperationGasCost([tx].flat(), mergedConfig, { eip7702Auth })
     const fee = BigInt(result.fee)
@@ -401,18 +403,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
       delegatedTo.toLowerCase() === config.delegationAddress.toLowerCase()
   }
 
-  /**
-   * Builds the authorization a quote estimates against, without signing anything.
-   *
-   * The bundler only needs to see the delegation (target and chain) to simulate the
-   * account, not a valid signature, so the signature and nonce are left for
-   * abstractionkit to fill with placeholders. Returns `null` when the account is already
-   * delegated to the configured address.
-   *
-   * @private
-   * @param {Omit<Evm7702GaslessWalletConfig, 'transferMaxFee' | 'transactionMaxFee'>} [config] - The merged wallet configuration.
-   * @returns {Promise<{ chainId: bigint, address: string } | null>} The unsigned authorization, or null if none is needed.
-   */
+  /** @private */
   async _getQuoteAuthorization (config = this._config) {
     if (await this._isDelegatedTo(config)) {
       return null
