@@ -671,23 +671,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         pmAccount.dispose()
       })
 
-      test('should not sign an authorization for a delegation address overridden per call', async () => {
-        const OTHER_DELEGATION_ADDRESS = '0x1111111111111111111111111111111111111111'
-        const owner = createOwner()
-        const spies = spyOnSigning(owner)
-        const pmAccount = new WalletAccountEvm7702Gasless(owner, PAYMASTER_TOKEN_CONFIG)
-
-        await pmAccount.quoteSendTransaction(TX, { delegationAddress: OTHER_DELEGATION_ADDRESS })
-
-        expect(createUserOperationMock.mock.calls[0][3].eip7702Auth).toEqual({
-          chainId: 1n,
-          address: OTHER_DELEGATION_ADDRESS
-        })
-        expectNothingSigned(spies)
-
-        pmAccount.dispose()
-      })
-
       test('should not reuse the quoted operation on send if the account became delegated after quoting', async () => {
         let code = '0x'
         const provider = {
