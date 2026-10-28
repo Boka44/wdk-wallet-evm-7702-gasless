@@ -234,11 +234,19 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
   }
 
   /**
-   * Quotes the costs of a send transaction operation. Caches the built user
-   * operation against the serialized transaction so that a subsequent
+   * Quotes the costs of a send transaction operation. A quote never signs an
+   * EIP-7702 authorization: quoting is excluded from policy evaluation, so a real
+   * authorization signed here would never be seen by the policy engine. For an
+   * undelegated EOA the authorization is left unsigned (abstractionkit fills in
+   * placeholder signature fields) only so the bundler can simulate the account.
+   *
+   * When the EOA is already delegated no authorization is needed, and the built
+   * user operation is cached against the serialized transaction so that a subsequent
    * sendTransaction / signTransaction / transfer call with the same tx can skip the
    * gas-estimation + paymaster round-trip, after a lightweight on-chain nonce check that
-   * re-quotes only if the nonce has moved. Cache entries expire after 2 minutes.
+   * re-quotes only if the nonce has moved. Cache entries expire after 2 minutes. A quote
+   * built with a placeholder authorization is never cached, as it can never be reused for
+   * a send.
    *
    * An already-signed user operation (as returned by `signTransaction`) may also be passed; in that
    * case its fee is read from its own gas fields (in token-paymaster mode this reflects the native
@@ -255,8 +263,8 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
       this._validateConfig(mergedConfig)
     }
 
-    // Assert the provider is on the configured chain before `_getAuthorization`
-    // signs a 7702 authorization against a mismatched RPC.
+    // Assert the provider is on the configured chain before building anything
+    // against a mismatched RPC.
     await this._getChainId()
 
     const { isSponsored } = mergedConfig
@@ -269,17 +277,26 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
       return { fee: 0n }
     }
 
-    const eip7702Auth = await this._getAuthorization(mergedConfig)
+    // A quote must not sign: it is excluded from policy evaluation, so a real EIP-7702
+    // authorization signed here would never be seen by the policy engine. The bundler only
+    // needs the delegation target and chain to simulate the account, so the authorization
+    // is left unsigned and abstractionkit fills in placeholder signature fields.
+    const eip7702Auth = await this._getQuoteAuthorization(mergedConfig)
     const result = await this._getUserOperationGasCost([tx].flat(), mergedConfig, { eip7702Auth })
     const fee = BigInt(result.fee)
 
     this._sweepExpiredQuotes()
-    this._quoteCache.set(WalletAccountEvm7702Gasless._getTxKey(tx, mergedConfig), {
-      fee,
-      createdAt: Date.now(),
-      sponsoredOp: result.sponsoredOp,
-      tokenQuote: result.tokenQuote
-    })
+
+    // An operation carrying a placeholder authorization is only good for the estimate:
+    // it can never be reused for a send, so it is not cached.
+    if (eip7702Auth === null) {
+      this._quoteCache.set(WalletAccountEvm7702Gasless._getTxKey(tx, mergedConfig), {
+        fee,
+        createdAt: Date.now(),
+        sponsoredOp: result.sponsoredOp,
+        tokenQuote: result.tokenQuote
+      })
+    }
 
     return { fee }
   }
@@ -387,11 +404,28 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
   }
 
   /** @private */
-  async _getAuthorization (config = this._config) {
+  async _isDelegatedTo (config) {
     const delegatedTo = await JsonRpcNode.from(this._eip1193Provider).getDelegatedAddress(this._address)
 
-    if (delegatedTo &&
-        delegatedTo.toLowerCase() === config.delegationAddress.toLowerCase()) {
+    return Boolean(delegatedTo) &&
+      delegatedTo.toLowerCase() === config.delegationAddress.toLowerCase()
+  }
+
+  /** @private */
+  async _getQuoteAuthorization (config = this._config) {
+    if (await this._isDelegatedTo(config)) {
+      return null
+    }
+
+    return {
+      chainId: await this._getChainId(),
+      address: config.delegationAddress
+    }
+  }
+
+  /** @private */
+  async _getAuthorization (config = this._config) {
+    if (await this._isDelegatedTo(config)) {
       return null
     }
 

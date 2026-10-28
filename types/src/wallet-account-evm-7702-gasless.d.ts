@@ -120,11 +120,19 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      */
     approve(options: ApproveOptions): Promise<TransactionResult>;
     /**
-     * Quotes the costs of a send transaction operation. Caches the built user
-     * operation against the serialized transaction so that a subsequent
+     * Quotes the costs of a send transaction operation. A quote never signs an
+     * EIP-7702 authorization: quoting is excluded from policy evaluation, so a real
+     * authorization signed here would never be seen by the policy engine. For an
+     * undelegated EOA the authorization is left unsigned (abstractionkit fills in
+     * placeholder signature fields) only so the bundler can simulate the account.
+     *
+     * When the EOA is already delegated no authorization is needed, and the built
+     * user operation is cached against the serialized transaction so that a subsequent
      * sendTransaction / signTransaction / transfer call with the same tx can skip the
      * gas-estimation + paymaster round-trip, after a lightweight on-chain nonce check that
-     * re-quotes only if the nonce has moved. Cache entries expire after 2 minutes.
+     * re-quotes only if the nonce has moved. Cache entries expire after 2 minutes. A quote
+     * built with a placeholder authorization is never cached, as it can never be reused for
+     * a send.
      *
      * An already-signed user operation (as returned by `signTransaction`) may also be passed; in that
      * case its fee is read from its own gas fields (in token-paymaster mode this reflects the native
@@ -176,6 +184,10 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      * Disposes the wallet account, erasing the private key from the memory.
      */
     dispose(): void;
+    /** @private */
+    private _isDelegatedTo;
+    /** @private */
+    private _getQuoteAuthorization;
     /** @private */
     private _getAuthorization;
     /** @private */
