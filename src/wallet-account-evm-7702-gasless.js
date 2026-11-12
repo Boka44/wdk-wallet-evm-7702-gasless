@@ -18,6 +18,8 @@ import { Contract, hexlify, keccak256, randomBytes, toUtf8Bytes } from 'ethers'
 
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
 
+import { PrivateKeySignerEvm } from '@tetherto/wdk-wallet-evm/signers'
+
 import { JsonRpcNode, calculateUserOperationMaxGasCost, fetchAccountNonce } from 'abstractionkit'
 
 import WalletAccountReadOnlyEvm7702Gasless from './wallet-account-read-only-evm-7702-gasless.js'
@@ -25,6 +27,8 @@ import WalletAccountReadOnlyEvm7702Gasless from './wallet-account-read-only-evm-
 /** @typedef {import('@tetherto/wdk-wallet').IWalletAccount} IWalletAccount */
 
 /** @typedef {import('@tetherto/wdk-wallet-evm').KeyPair} KeyPair */
+/** @typedef {import('@tetherto/wdk-wallet-evm/signers').ISignerEvm} ISignerEvm */
+/** @typedef {import('@tetherto/wdk-wallet-evm').SignerOptions} SignerOptions */
 
 /** @typedef {import('@tetherto/wdk-wallet-evm').EvmTransaction} EvmTransaction */
 /** @typedef {import('@tetherto/wdk-wallet-evm').TransactionResult} TransactionResult */
@@ -69,18 +73,50 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    */
 
   /**
+   * Creates a new evm 7702 gasless wallet account from a BIP-39 seed at path m/44'/60'/0'/0/0.
+   *
+   * @overload
+   * @param {string | Uint8Array} seed - A BIP-39 mnemonic seed phrase, or a raw BIP-32 master seed (16-64 bytes).
+   * @param {Evm7702GaslessWalletConfig} config - The configuration object.
+   */
+
+  /**
+   * Creates a new evm 7702 gasless wallet account using a signer.
+   *
+   * The signer is wiped on {@link dispose} only if `shouldWipeSignerOnDisposal` is set.
+   *
+   * @overload
+   * @param {ISignerEvm} signer - A signer implementing the EVM signer interface.
+   * @param {Evm7702GaslessWalletConfig & SignerOptions} config - The configuration object.
+   */
+
+  /**
    * Creates a new evm 7702 gasless wallet account from a wallet-evm account.
+   *
+   * The wallet-evm account is not disposed on {@link dispose}.
    *
    * @overload
    * @param {WalletAccountEvm} account - The wallet-evm account.
    * @param {Evm7702GaslessWalletConfig} config - The configuration object.
    */
-  constructor (seedOrAccount, pathOrConfig, config) {
-    const [ownerAccount, resolvedConfig] = seedOrAccount instanceof WalletAccountEvm
-      ? [seedOrAccount, pathOrConfig]
-      : [new WalletAccountEvm(seedOrAccount, pathOrConfig, config), config]
+  constructor (seedOrSignerOrAccount, pathOrConfig, config) {
+    const isOwnerSupplied = seedOrSignerOrAccount instanceof WalletAccountEvm
+    const isSeed = typeof seedOrSignerOrAccount === 'string' || seedOrSignerOrAccount instanceof Uint8Array
 
-    super(ownerAccount.address, resolvedConfig)
+    const [ownerAccount, resolvedConfig] = isOwnerSupplied
+      ? [seedOrSignerOrAccount, pathOrConfig]
+      : [
+          new WalletAccountEvm(seedOrSignerOrAccount, pathOrConfig, config),
+          typeof pathOrConfig === 'string' ? config : pathOrConfig
+        ]
+
+    try {
+      super(undefined, resolvedConfig)
+    } catch (error) {
+      if (isSeed) ownerAccount.dispose()
+
+      throw error
+    }
 
     /**
      * The evm 7702 gasless wallet account configuration.
@@ -92,6 +128,12 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
 
     /** @private */
     this._ownerAccount = ownerAccount
+
+    /** @private */
+    this._shouldDisposeOwnerAccount = !isOwnerSupplied
+
+    /** @private */
+    this._ownerAddress = undefined
 
     /** @private */
     this._evm7702GaslessReadOnlyAccount = undefined
@@ -110,9 +152,31 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
   }
 
   /**
-   * The derivation path of this account (see [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)).
+   * Creates a new evm 7702 gasless wallet account from a raw private key.
    *
-   * @type {string}
+   * The account owns the key and wipes it on {@link dispose}.
+   *
+   * @param {string | Uint8Array} privateKey - The raw private key (hex string with or without 0x, or 32 bytes).
+   * @param {Evm7702GaslessWalletConfig} config - The configuration object.
+   * @returns {WalletAccountEvm7702Gasless} The wallet account.
+   */
+  static fromPrivateKey (privateKey, config) {
+    const signer = new PrivateKeySignerEvm(privateKey)
+
+    try {
+      return new WalletAccountEvm7702Gasless(signer, { ...config, shouldWipeSignerOnDisposal: true })
+    } catch (error) {
+      signer.dispose()
+
+      throw error
+    }
+  }
+
+  /**
+   * The derivation path of this account (see [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)),
+   * or null if the account's signer is not bound to a BIP-44 position (e.g. private-key signers).
+   *
+   * @type {string | null}
    */
   get path () {
     return this._ownerAccount.path
@@ -125,10 +189,21 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    * it's strongly recommended to treat the key pair as a read-only view of the keys. While it's still technically possible to alter their
    * content, client code should never do so.
    *
-   * @type {KeyPair}
+   * @type {KeyPair | null}
    */
   get keyPair () {
     return this._ownerAccount.keyPair
+  }
+
+  /**
+   * Returns the account's address, which is the owner's address (the EOA delegated through EIP-7702).
+   *
+   * @returns {Promise<string>} The account's address.
+   */
+  async getAddress () {
+    this._ownerAddress ??= await this._ownerAccount.getAddress()
+
+    return this._ownerAddress
   }
 
   /**
@@ -381,7 +456,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    */
   async toReadOnlyAccount () {
     if (!this._evm7702GaslessReadOnlyAccount) {
-      this._evm7702GaslessReadOnlyAccount = new WalletAccountReadOnlyEvm7702Gasless(this._address, { ...this._config, provider: this._provider })
+      this._evm7702GaslessReadOnlyAccount = new WalletAccountReadOnlyEvm7702Gasless(await this.getAddress(), { ...this._config, provider: this._provider })
     }
     return this._evm7702GaslessReadOnlyAccount
   }
@@ -391,12 +466,15 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    */
   dispose () {
     this._quoteCache.clear()
-    this._ownerAccount.dispose()
+
+    if (this._shouldDisposeOwnerAccount) {
+      this._ownerAccount.dispose()
+    }
   }
 
   /** @private */
   async _isDelegatedTo (config) {
-    const delegatedTo = await JsonRpcNode.from(this._eip1193Provider).getDelegatedAddress(this._address)
+    const delegatedTo = await JsonRpcNode.from(this._eip1193Provider).getDelegatedAddress(await this.getAddress())
 
     return Boolean(delegatedTo) &&
       delegatedTo.toLowerCase() === config.delegationAddress.toLowerCase()
@@ -545,7 +623,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
     const cached = this._consumeCachedQuote(tx, config)
     if (!cached?.sponsoredOp) return cached
 
-    const onChainNonce = await fetchAccountNonce(this._eip1193Provider, await this._getEntryPointAddress(), this._address)
+    const onChainNonce = await fetchAccountNonce(this._eip1193Provider, await this._getEntryPointAddress(), await this.getAddress())
 
     return cached.sponsoredOp.nonce === onChainNonce ? cached : null
   }
@@ -562,7 +640,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
           throw new Error('nonceKey must be within the uint192 range (0 to 2^192 - 1).')
         }
       }
-      return await fetchAccountNonce(this._eip1193Provider, await this._getEntryPointAddress(), this._address, key)
+      return await fetchAccountNonce(this._eip1193Provider, await this._getEntryPointAddress(), await this.getAddress(), key)
     }
 
     if (config.parallel) {

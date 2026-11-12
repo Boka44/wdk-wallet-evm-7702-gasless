@@ -745,7 +745,7 @@ export default class WalletAccountReadOnlyEvm7702Gasless extends WalletAccountRe
     if (!this._smartAccount) {
       const { account: Account, address } = await this._getEntryPoint()
 
-      this._smartAccount = new Account(this._address, {
+      this._smartAccount = new Account(await this.getAddress(), {
         entrypointAddress: address,
         delegateeAddress: this._config.delegationAddress
       })

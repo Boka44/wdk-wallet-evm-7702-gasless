@@ -340,7 +340,12 @@ Individual gasless wallet account. Extends `WalletAccountReadOnlyEvm7702Gasless`
 
 **Constructor overloads:**
 - `new WalletAccountEvm7702Gasless(seed, path, config)` — standard BIP-44 derivation
-- `new WalletAccountEvm7702Gasless(walletAccountEvm, config)` — wrap an existing `WalletAccountEvm`
+- `new WalletAccountEvm7702Gasless(seed, config)` — derivation at the default path `m/44'/60'/0'/0/0`
+- `new WalletAccountEvm7702Gasless(signer, config)` — use an evm signer (wiped on `dispose()` only with `shouldWipeSignerOnDisposal: true`)
+- `new WalletAccountEvm7702Gasless(walletAccountEvm, config)` — wrap an existing `WalletAccountEvm` (not disposed on `dispose()`)
+
+**Static methods:**
+- `WalletAccountEvm7702Gasless.fromPrivateKey(privateKey, config)` — use a raw private key, wiped on `dispose()`
 
 | Method | Description | Returns |
 |--------|-------------|---------|
@@ -365,8 +370,8 @@ Individual gasless wallet account. Extends `WalletAccountReadOnlyEvm7702Gasless`
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `path` | `string` | The full derivation path |
-| `keyPair` | `KeyPair` | The account's key pair |
+| `path` | `string \| null` | The full derivation path, or `null` for signers without one |
+| `keyPair` | `KeyPair \| null` | The account's key pair, or `null` for signers without key material |
 
 ### WalletAccountReadOnlyEvm7702Gasless
 

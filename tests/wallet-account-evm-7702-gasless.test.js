@@ -6,6 +6,7 @@ import { ConfigurationError } from '../src/errors.js'
 
 const actualWalletEvm = await import('@tetherto/wdk-wallet-evm')
 const actualAk = await import('abstractionkit')
+const { PrivateKeySignerEvm, SeedSignerEvm } = await import('@tetherto/wdk-wallet-evm/signers')
 
 const getAllowanceMock = jest.fn()
 const getNetworkMock = jest.fn()
@@ -322,6 +323,33 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         })
       })
   
+      test('should successfully initialize an account for the given signer', async () => {
+        const signer = new SeedSignerEvm(SEED_PHRASE, ACCOUNT.path)
+        const acc = new WalletAccountEvm7702Gasless(signer, SPONSORED_CONFIG)
+
+        expect(await acc.getAddress()).toBe(ACCOUNT.address)
+        expect(acc.path).toBe(ACCOUNT.path)
+
+        signer.dispose()
+      })
+
+      test('should resolve the address of a signer that only exposes it asynchronously', async () => {
+        class AsyncAddressSigner extends SeedSignerEvm {
+          get address () { return undefined }
+
+          async getAddress () { return ACCOUNT.address }
+        }
+
+        const signer = new AsyncAddressSigner(SEED_PHRASE, ACCOUNT.path)
+        const acc = new WalletAccountEvm7702Gasless(signer, SPONSORED_CONFIG)
+        const readOnlyAccount = await acc.toReadOnlyAccount()
+
+        expect(await acc.getAddress()).toBe(ACCOUNT.address)
+        expect(await readOnlyAccount.getAddress()).toBe(ACCOUNT.address)
+
+        signer.dispose()
+      })
+
       test('should throw if the seed phrase is invalid', () => {
         expect(() => { new WalletAccountEvm7702Gasless(INVALID_SEED_PHRASE, "0'/0/0", SPONSORED_CONFIG) })
           .toThrow('The seed phrase is invalid.')
@@ -345,6 +373,39 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       test('should throw if delegationAddress is missing from the config', () => {
         expect(() => new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", { ...SPONSORED_CONFIG, delegationAddress: undefined }))
           .toThrow('Missing required configuration field: delegationAddress.')
+      })
+
+      test('should wipe the seed signer if the account cannot be created', () => {
+        const disposeSpy = jest.spyOn(SeedSignerEvm.prototype, 'dispose')
+
+        expect(() => new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", { ...SPONSORED_CONFIG, bundlerUrl: undefined }))
+          .toThrow('Missing required configuration field: bundlerUrl.')
+        expect(disposeSpy).toHaveBeenCalledTimes(1)
+
+        disposeSpy.mockRestore()
+      })
+    })
+
+    describe('fromPrivateKey', () => {
+      test('should create an account from a raw private key and wipe it on dispose', async () => {
+        const acc = WalletAccountEvm7702Gasless.fromPrivateKey(ACCOUNT.keyPair.privateKey, SPONSORED_CONFIG)
+
+        expect(await acc.getAddress()).toBe(ACCOUNT.address)
+        expect(acc.path).toBeNull()
+
+        acc.dispose()
+
+        expect(acc.keyPair.privateKey).toBeNull()
+      })
+
+      test('should wipe the private key signer if the account cannot be created', () => {
+        const disposeSpy = jest.spyOn(PrivateKeySignerEvm.prototype, 'dispose')
+
+        expect(() => WalletAccountEvm7702Gasless.fromPrivateKey(ACCOUNT.keyPair.privateKey, { ...SPONSORED_CONFIG, bundlerUrl: undefined }))
+          .toThrow('Missing required configuration field: bundlerUrl.')
+        expect(disposeSpy).toHaveBeenCalledTimes(1)
+
+        disposeSpy.mockRestore()
       })
     })
   
@@ -1093,6 +1154,29 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         disposableAccount.dispose()
   
         expect(disposableAccount.keyPair.privateKey).toBeNull()
+      })
+
+      test('should wipe a given signer only if shouldWipeSignerOnDisposal is set', () => {
+        const keptSigner = new SeedSignerEvm(SEED_PHRASE, ACCOUNT.path)
+        const wipedSigner = new SeedSignerEvm(SEED_PHRASE, ACCOUNT.path)
+
+        new WalletAccountEvm7702Gasless(keptSigner, SPONSORED_CONFIG).dispose()
+        new WalletAccountEvm7702Gasless(wipedSigner, { ...SPONSORED_CONFIG, shouldWipeSignerOnDisposal: true }).dispose()
+
+        expect(keptSigner.keyPair.privateKey).not.toBeNull()
+        expect(wipedSigner.keyPair.privateKey).toBeNull()
+
+        keptSigner.dispose()
+      })
+
+      test('should not dispose a given WalletAccountEvm', () => {
+        const ownerAccount = new actualWalletEvm.WalletAccountEvm(SEED_PHRASE, "0'/0/0", SPONSORED_CONFIG)
+
+        new WalletAccountEvm7702Gasless(ownerAccount, SPONSORED_CONFIG).dispose()
+
+        expect(ownerAccount.keyPair.privateKey).not.toBeNull()
+
+        ownerAccount.dispose()
       })
     })
   })
