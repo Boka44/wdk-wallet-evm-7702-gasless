@@ -107,6 +107,12 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      */
     get keyPair(): KeyPair | null;
     /**
+     * Returns the account's address, which is the owner's address (the EOA delegated through EIP-7702).
+     *
+     * @returns {Promise<string>} The account's address.
+     */
+    getAddress(): Promise<string>;
+    /**
      * Signs a message.
      *
      * @param {string} message - The message to sign.

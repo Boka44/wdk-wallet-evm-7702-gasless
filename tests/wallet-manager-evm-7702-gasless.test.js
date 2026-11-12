@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
+import { InvalidSignerError, NoSuchElementError } from '@tetherto/wdk-wallet'
+import { PrivateKeySignerEvm, SeedSignerEvm } from '@tetherto/wdk-wallet-evm/signers'
 
 const actualEthers = await import('ethers')
 
@@ -10,9 +12,12 @@ jest.unstable_mockModule('ethers', () => ({
   BrowserProvider: jest.fn().mockImplementation(() => ({ getFeeData: getFeeDataMock }))
 }))
 
-const { default: WalletManagerEvm7702Gasless, WalletAccountEvm7702Gasless } = await import('../index.js')
+const { default: WalletManagerEvm7702Gasless, WalletAccountEvm7702Gasless, ConfigurationError } = await import('../index.js')
 
 const SEED_PHRASE = 'cook voyage document eight skate token alien guide drink uncle term abuse'
+const OTHER_SEED_PHRASE = 'test test test test test test test test test test test junk'
+const PRIVATE_KEY = '260905feebf1ec684f36f1599128b85f3a26c2b817f2065a2fc278398449c41f'
+const ACCOUNT_ADDRESS = '0x405005C7c4422390F4B334F64Cf20E0b767131d0'
 
 const SPONSORED_CONFIG = {
   provider: 'https://dummy-provider.url/',
@@ -31,6 +36,13 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
 
     afterEach(() => {
       wallet.dispose()
+    })
+
+    describe('constructor', () => {
+      test('should throw if the provider is an empty list', () => {
+        expect(() => new WalletManagerEvm7702Gasless(SEED_PHRASE, { ...SPONSORED_CONFIG, provider: [] }))
+          .toThrow(ConfigurationError)
+      })
     })
 
     describe('getAccount', () => {
@@ -57,6 +69,22 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         expect(account1).toBe(account2)
       })
 
+      test('should return a single account for concurrent calls and wipe the duplicate derived signer', async () => {
+        const deriveSpy = jest.spyOn(SeedSignerEvm.prototype, 'derive')
+
+        const [account1, account2] = await Promise.all([wallet.getAccount(0), wallet.getAccount(0)])
+
+        expect(account1).toBe(account2)
+
+        const children = await Promise.all(deriveSpy.mock.results.map(({ value }) => value))
+
+        expect(children).toHaveLength(2)
+        expect(children.filter(child => child.keyPair.privateKey === null)).toHaveLength(1)
+        expect(account1.keyPair.privateKey).not.toBeNull()
+
+        deriveSpy.mockRestore()
+      })
+
       test('should throw if the index is a negative number', async () => {
         await expect(wallet.getAccount(-1))
           .rejects.toThrow('invalid path component')
@@ -75,6 +103,126 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       test('should throw if the path is invalid', async () => {
         await expect(wallet.getAccountByPath("a'/b/c"))
           .rejects.toThrow('invalid path component')
+      })
+
+      test('should wipe the derived signer if the account cannot be created', async () => {
+        const invalidWallet = new WalletManagerEvm7702Gasless(SEED_PHRASE, { ...SPONSORED_CONFIG, bundlerUrl: undefined })
+        const disposeSpy = jest.spyOn(SeedSignerEvm.prototype, 'dispose')
+
+        await expect(invalidWallet.getAccountByPath("0'/0/0")).rejects.toThrow(ConfigurationError)
+
+        expect(disposeSpy).toHaveBeenCalledTimes(1)
+
+        disposeSpy.mockRestore()
+        invalidWallet.dispose()
+      })
+    })
+
+    describe('with a default signer', () => {
+      let defaultSigner
+      let signerWallet
+
+      beforeEach(() => {
+        defaultSigner = new SeedSignerEvm(SEED_PHRASE, "m/44'/60'")
+        signerWallet = new WalletManagerEvm7702Gasless(defaultSigner, SPONSORED_CONFIG)
+      })
+
+      afterEach(() => {
+        signerWallet.dispose()
+        defaultSigner.dispose()
+      })
+
+      test('should derive the same accounts as a wallet created from the seed phrase', async () => {
+        const fromSigner = await signerWallet.getAccount(2)
+        const fromSeed = await wallet.getAccount(2)
+
+        expect(fromSigner.path).toBe("m/44'/60'/0'/0/2")
+        expect(await fromSigner.getAddress()).toBe(await fromSeed.getAddress())
+      })
+
+      test('should throw if the default signer is not derivable', () => {
+        const privateKeySigner = new PrivateKeySignerEvm(PRIVATE_KEY)
+
+        expect(() => new WalletManagerEvm7702Gasless(privateKeySigner, SPONSORED_CONFIG))
+          .toThrow(InvalidSignerError)
+
+        privateKeySigner.dispose()
+      })
+
+      test('should not wipe a default signer supplied by the caller on disposal', () => {
+        signerWallet.dispose()
+
+        expect(defaultSigner.keyPair.privateKey).not.toBeNull()
+      })
+
+      test('should wipe the default signer it created from a seed on disposal', () => {
+        const signer = wallet.getSigner()
+
+        expect(signer.keyPair.privateKey).not.toBeNull()
+
+        wallet.dispose()
+
+        expect(signer.keyPair.privateKey).toBeNull()
+      })
+    })
+
+    describe('with named signers', () => {
+      let privateKeySigner
+      let otherSeedSigner
+
+      beforeEach(() => {
+        privateKeySigner = new PrivateKeySignerEvm(PRIVATE_KEY)
+        otherSeedSigner = new SeedSignerEvm(OTHER_SEED_PHRASE, "m/44'/60'")
+
+        wallet.addSigner('pk', privateKeySigner).addSigner('other', otherSeedSigner)
+      })
+
+      afterEach(() => {
+        privateKeySigner.dispose()
+        otherSeedSigner.dispose()
+      })
+
+      test('should return the account of a registered private-key signer as given', async () => {
+        const account = await wallet.getAccount('pk')
+
+        expect(account.path).toBeNull()
+        expect(await account.getAddress()).toBe(ACCOUNT_ADDRESS)
+        expect(await wallet.getAccount('pk')).toBe(account)
+      })
+
+      test('should not wipe a registered signer when the wallet is disposed', async () => {
+        await wallet.getAccount('pk')
+
+        wallet.dispose()
+
+        expect(privateKeySigner.keyPair.privateKey).not.toBeNull()
+      })
+
+      test('should derive an account below a derivable registered signer and wipe it on disposal', async () => {
+        const account = await wallet.getAccount(1, { signerName: 'other' })
+
+        expect(account.path).toBe("m/44'/60'/0'/0/1")
+        expect(await wallet.getAccountByPath("0'/0/1", { signerName: 'other' })).toBe(account)
+        expect(account).not.toBe(await wallet.getAccount(1))
+
+        wallet.dispose()
+
+        expect(account.keyPair.privateKey).toBeNull()
+        expect(otherSeedSigner.keyPair.privateKey).not.toBeNull()
+      })
+
+      test('should throw if the registered signer is not derivable and a path is requested', async () => {
+        await expect(wallet.getAccountByPath("0'/0/0", { signerName: 'pk' }))
+          .rejects.toThrow(InvalidSignerError)
+        await expect(wallet.getAccount(0, { signerName: 'pk' }))
+          .rejects.toThrow(InvalidSignerError)
+      })
+
+      test('should throw if no signer is registered with the given name', async () => {
+        await expect(wallet.getAccount('unknown'))
+          .rejects.toThrow(NoSuchElementError)
+        await expect(wallet.getAccount(0, { signerName: 'unknown' }))
+          .rejects.toThrow(NoSuchElementError)
       })
     })
 

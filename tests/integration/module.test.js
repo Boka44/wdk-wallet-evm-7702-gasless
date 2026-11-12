@@ -469,10 +469,22 @@ describe('@wdk/wallet-evm-7702-gasless', () => {
   test('should dispose the wallet and erase the private keys of the accounts', async () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
 
-    const account0 = await wallet.getAccount(0)
-    const account1 = await wallet.getAccount(1)
+    // Disposing wipes the default signer, so use a dedicated wallet instead of the shared one.
+    const disposableWallet = new WalletManagerEvm7702Gasless(SEED_PHRASE, {
+      provider: 'http://localhost:8545',
+      bundlerUrl: 'http://localhost:4337',
+      paymasterUrl: 'http://localhost:3000?pimlico',
+      paymasterAddress,
+      delegationAddress: DELEGATION_ADDRESS,
+      paymasterToken: {
+        address: MOCK_PAYMASTER_TOKEN_ADDRESS
+      }
+    })
 
-    wallet.dispose()
+    const account0 = await disposableWallet.getAccount(0)
+    const account1 = await disposableWallet.getAccount(1)
+
+    disposableWallet.dispose()
 
     const MESSAGE = 'Hello, world!'
 
