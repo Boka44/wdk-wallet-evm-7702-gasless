@@ -294,7 +294,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
 
     describe('constructor', () => {
       test('should successfully initialize an account for the given seed phrase and path', () => {
-        expect(account.index).toBe(ACCOUNT.index)
         expect(account.path).toBe(ACCOUNT.path)
         expect(account.keyPair).toEqual({
           privateKey: new Uint8Array(Buffer.from(ACCOUNT.keyPair.privateKey, 'hex')),
@@ -305,7 +304,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       test('should successfully initialize an account for the given seed and path', () => {
         const acc = new WalletAccountEvm7702Gasless(SEED, "0'/0/0", SPONSORED_CONFIG)
   
-        expect(acc.index).toBe(ACCOUNT.index)
         expect(acc.path).toBe(ACCOUNT.path)
         expect(acc.keyPair).toEqual({
           privateKey: new Uint8Array(Buffer.from(ACCOUNT.keyPair.privateKey, 'hex')),
@@ -317,7 +315,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         const ownerAccount = new actualWalletEvm.WalletAccountEvm(SEED_PHRASE, "0'/0/0", SPONSORED_CONFIG)
         const acc = new WalletAccountEvm7702Gasless(ownerAccount, SPONSORED_CONFIG)
   
-        expect(acc.index).toBe(ACCOUNT.index)
         expect(acc.path).toBe(ACCOUNT.path)
         expect(acc.keyPair).toEqual({
           privateKey: new Uint8Array(Buffer.from(ACCOUNT.keyPair.privateKey, 'hex')),

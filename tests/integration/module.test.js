@@ -200,7 +200,6 @@ describe('@wdk/wallet-evm-7702-gasless', () => {
   test('should derive accounts with correct properties and 7702 account addresses', async () => {
     const account0 = await wallet.getAccountByPath("0'/0/0")
 
-    expect(account0.index).toBe(ACCOUNT0.index)
     expect(account0.path).toBe(ACCOUNT0.path)
     expect(account0.keyPair).toEqual({
       privateKey: new Uint8Array(Buffer.from(ACCOUNT0.keyPair.privateKey, 'hex')),
@@ -491,7 +490,7 @@ describe('@wdk/wallet-evm-7702-gasless', () => {
     for (const account of [account0, account1]) {
       expect(account.keyPair.privateKey).toBe(null)
 
-      await expect(account.sign(MESSAGE)).rejects.toThrow('signMessage')
+      await expect(account.sign(MESSAGE)).rejects.toThrow('The account has been disposed.')
       await expect(account.sendTransaction(TRANSACTION)).rejects.toThrow()
       await expect(account.transfer(TRANSFER)).rejects.toThrow()
     }

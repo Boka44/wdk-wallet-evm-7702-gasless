@@ -365,7 +365,6 @@ Individual gasless wallet account. Extends `WalletAccountReadOnlyEvm7702Gasless`
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `index` | `number` | The derivation path's index |
 | `path` | `string` | The full derivation path |
 | `keyPair` | `KeyPair` | The account's key pair |
 

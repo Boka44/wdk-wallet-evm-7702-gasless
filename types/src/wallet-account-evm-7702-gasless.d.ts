@@ -56,12 +56,6 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      */
     private _quoteCache;
     /**
-     * The derivation path's index of this account.
-     *
-     * @type {number}
-     */
-    get index(): number;
-    /**
      * The derivation path of this account (see [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)).
      *
      * @type {string}
