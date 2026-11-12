@@ -133,6 +133,10 @@ const wallet = new WalletManagerEvm7702Gasless(new SeedSignerEvm(seedPhrase, "m/
 wallet.addSigner('treasury', new PrivateKeySignerEvm(privateKey))
 const treasury = await wallet.getAccount('treasury')
 
+// A derivable signer registered by name derives accounts below its own path.
+wallet.addSigner('bank', new SeedSignerEvm(otherSeedPhrase, "m/44'/60'"))
+const bankAccount = await wallet.getAccount(0, { signerName: 'bank' })
+
 // Standalone accounts, without a wallet manager.
 const account = WalletAccountEvm7702Gasless.fromPrivateKey(privateKey, config)
 ```
@@ -141,7 +145,6 @@ const account = WalletAccountEvm7702Gasless.fromPrivateKey(privateKey, config)
 - A wallet created from a seed wipes its default signer on `dispose()`. Signers you supply are never wiped by the wallet, and an account wipes a signer you give it only with `shouldWipeSignerOnDisposal: true`.
 - The account's address is resolved from the signer's `getAddress()` on first use, so signers that only provide their address asynchronously (e.g. hardware signers) are supported.
 - `account.path` and `account.keyPair` are `null` for signers without a derivation path or key material.
-- After `wallet.dispose()`, the wallet can no longer derive accounts from its default signer.
 
 ### Managing Multiple Accounts
 
@@ -151,9 +154,6 @@ const account1 = await wallet.getAccount(1)
 
 // Or by custom derivation path (full path: m/44'/60'/0'/0/5)
 const customAccount = await wallet.getAccountByPath("0'/0/5")
-
-// Or below a signer registered by name
-const treasuryAccount = await wallet.getAccount(0, { signerName: 'treasury-seed' })
 ```
 
 ### Checking Balances
