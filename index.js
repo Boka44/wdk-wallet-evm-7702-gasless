@@ -17,6 +17,7 @@
 /** @typedef {import('@tetherto/wdk-wallet-evm').FeeRates} FeeRates */
 
 /** @typedef {import('@tetherto/wdk-wallet-evm').KeyPair} KeyPair */
+/** @typedef {import('@tetherto/wdk-wallet-evm').SignerOptions} SignerOptions */
 /** @typedef {import('@tetherto/wdk-wallet-evm').EvmTransaction} EvmTransaction */
 /** @typedef {import('@tetherto/wdk-wallet-evm').TransactionResult} TransactionResult */
 /** @typedef {import('@tetherto/wdk-wallet-evm').EvmTransferOptions} EvmTransferOptions */

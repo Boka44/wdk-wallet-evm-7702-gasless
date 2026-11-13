@@ -6,6 +6,7 @@ import { ConfigurationError } from '../src/errors.js'
 
 const actualWalletEvm = await import('@tetherto/wdk-wallet-evm')
 const actualAk = await import('abstractionkit')
+const { PrivateKeySignerEvm, SeedSignerEvm } = await import('@tetherto/wdk-wallet-evm/signers')
 
 const getAllowanceMock = jest.fn()
 const getNetworkMock = jest.fn()
@@ -294,7 +295,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
 
     describe('constructor', () => {
       test('should successfully initialize an account for the given seed phrase and path', () => {
-        expect(account.index).toBe(ACCOUNT.index)
         expect(account.path).toBe(ACCOUNT.path)
         expect(account.keyPair).toEqual({
           privateKey: new Uint8Array(Buffer.from(ACCOUNT.keyPair.privateKey, 'hex')),
@@ -305,7 +305,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       test('should successfully initialize an account for the given seed and path', () => {
         const acc = new WalletAccountEvm7702Gasless(SEED, "0'/0/0", SPONSORED_CONFIG)
   
-        expect(acc.index).toBe(ACCOUNT.index)
         expect(acc.path).toBe(ACCOUNT.path)
         expect(acc.keyPair).toEqual({
           privateKey: new Uint8Array(Buffer.from(ACCOUNT.keyPair.privateKey, 'hex')),
@@ -317,7 +316,6 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         const ownerAccount = new actualWalletEvm.WalletAccountEvm(SEED_PHRASE, "0'/0/0", SPONSORED_CONFIG)
         const acc = new WalletAccountEvm7702Gasless(ownerAccount, SPONSORED_CONFIG)
   
-        expect(acc.index).toBe(ACCOUNT.index)
         expect(acc.path).toBe(ACCOUNT.path)
         expect(acc.keyPair).toEqual({
           privateKey: new Uint8Array(Buffer.from(ACCOUNT.keyPair.privateKey, 'hex')),
@@ -348,6 +346,163 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       test('should throw if delegationAddress is missing from the config', () => {
         expect(() => new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", { ...SPONSORED_CONFIG, delegationAddress: undefined }))
           .toThrow('Missing required configuration field: delegationAddress.')
+      })
+    })
+
+    describe('constructor with a seed and no path', () => {
+      test('should default to the first account', async () => {
+        const acc = new WalletAccountEvm7702Gasless(SEED_PHRASE, SPONSORED_CONFIG)
+
+        expect(acc.path).toBe(ACCOUNT.path)
+        expect(await acc.getAddress()).toBe(ACCOUNT.address)
+
+        acc.dispose()
+      })
+    })
+
+    describe('constructor with a signer', () => {
+      let signer
+
+      beforeEach(async () => {
+        signer = await new SeedSignerEvm(SEED_PHRASE, "m/44'/60'").derive("0'/0/0")
+      })
+
+      afterEach(() => {
+        signer.dispose()
+      })
+
+      test('should derive the same address as the equivalent seed account', async () => {
+        const acc = new WalletAccountEvm7702Gasless(signer, SPONSORED_CONFIG)
+
+        expect(await acc.getAddress()).toBe(ACCOUNT.address)
+        expect(acc.path).toBe(ACCOUNT.path)
+        expect(acc.keyPair).toEqual(signer.keyPair)
+      })
+
+      test('should sign messages through the signer', async () => {
+        const acc = new WalletAccountEvm7702Gasless(signer, SPONSORED_CONFIG)
+
+        expect(await acc.sign('Dummy message to sign.')).toBe(await account.sign('Dummy message to sign.'))
+      })
+
+      test('should not wipe the signer on disposal by default', () => {
+        const acc = new WalletAccountEvm7702Gasless(signer, SPONSORED_CONFIG)
+
+        acc.dispose()
+
+        expect(signer.keyPair.privateKey).not.toBeNull()
+      })
+
+      test('should wipe the signer on disposal if shouldWipeSignerOnDisposal is set', () => {
+        const acc = new WalletAccountEvm7702Gasless(signer, { ...SPONSORED_CONFIG, shouldWipeSignerOnDisposal: true })
+
+        acc.dispose()
+
+        expect(signer.keyPair.privateKey).toBeNull()
+      })
+
+      test('should resolve the address from getAddress() when the signer has no sync address', async () => {
+        class AsyncAddressSigner extends SeedSignerEvm {
+          get address () { return undefined }
+
+          async getAddress () { return ACCOUNT.address }
+        }
+
+        const asyncSigner = new AsyncAddressSigner(SEED_PHRASE, ACCOUNT.path)
+        const acc = new WalletAccountEvm7702Gasless(asyncSigner, SPONSORED_CONFIG)
+        const readOnlyAccount = await acc.toReadOnlyAccount()
+
+        expect(await acc.getAddress()).toBe(ACCOUNT.address)
+        expect(await readOnlyAccount.getAddress()).toBe(ACCOUNT.address)
+
+        asyncSigner.dispose()
+      })
+    })
+
+    describe('constructor with a WalletAccountEvm', () => {
+      test('should not dispose the given account on disposal', () => {
+        const ownerAccount = new actualWalletEvm.WalletAccountEvm(SEED_PHRASE, "0'/0/0", SPONSORED_CONFIG)
+
+        new WalletAccountEvm7702Gasless(ownerAccount, SPONSORED_CONFIG).dispose()
+
+        expect(ownerAccount.keyPair.privateKey).not.toBeNull()
+
+        ownerAccount.dispose()
+      })
+    })
+
+    describe('constructor ownership of the seed signer', () => {
+      test('should wipe the seed signer if the construction fails', () => {
+        const disposeSpy = jest.spyOn(SeedSignerEvm.prototype, 'dispose')
+
+        expect(() => new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", { ...SPONSORED_CONFIG, bundlerUrl: undefined }))
+          .toThrow(ConfigurationError)
+
+        expect(disposeSpy).toHaveBeenCalledTimes(1)
+
+        disposeSpy.mockRestore()
+      })
+
+      test.each([
+        ['no path and no configuration', [SEED_PHRASE]],
+        ['a path and no configuration', [SEED_PHRASE, "0'/0/0"]]
+      ])('should wipe the seed signer if the account is created with %s', (_, args) => {
+        const disposeSpy = jest.spyOn(SeedSignerEvm.prototype, 'dispose')
+
+        expect(() => new WalletAccountEvm7702Gasless(...args)).toThrow(TypeError)
+
+        expect(disposeSpy).toHaveBeenCalledTimes(1)
+
+        disposeSpy.mockRestore()
+      })
+
+      test('should wipe the seed signer on disposal', () => {
+        const acc = new WalletAccountEvm7702Gasless(SEED_PHRASE, "0'/0/0", SPONSORED_CONFIG)
+
+        acc.dispose()
+
+        expect(acc.keyPair.privateKey).toBeNull()
+      })
+    })
+
+    describe('fromPrivateKey', () => {
+      let privateKeyAccount
+
+      beforeEach(() => {
+        privateKeyAccount = WalletAccountEvm7702Gasless.fromPrivateKey(ACCOUNT.keyPair.privateKey, SPONSORED_CONFIG)
+      })
+
+      afterEach(() => {
+        privateKeyAccount.dispose()
+      })
+
+      test('should create an account owned by the private key', async () => {
+        expect(privateKeyAccount).toBeInstanceOf(WalletAccountEvm7702Gasless)
+        expect(await privateKeyAccount.getAddress()).toBe(ACCOUNT.address)
+        expect(privateKeyAccount.path).toBeNull()
+        expect(Buffer.from(privateKeyAccount.keyPair.privateKey).toString('hex')).toBe(ACCOUNT.keyPair.privateKey)
+        expect(Buffer.from(privateKeyAccount.keyPair.publicKey).toString('hex')).toBe(ACCOUNT.keyPair.publicKey)
+      })
+
+      test('should sign like the equivalent seed account', async () => {
+        expect(await privateKeyAccount.sign('Dummy message to sign.')).toBe(await account.sign('Dummy message to sign.'))
+      })
+
+      test('should wipe the private key on disposal', () => {
+        privateKeyAccount.dispose()
+
+        expect(privateKeyAccount.keyPair.privateKey).toBeNull()
+      })
+
+      test('should wipe the private key if the construction fails', () => {
+        const disposeSpy = jest.spyOn(PrivateKeySignerEvm.prototype, 'dispose')
+
+        expect(() => WalletAccountEvm7702Gasless.fromPrivateKey(ACCOUNT.keyPair.privateKey, { ...SPONSORED_CONFIG, bundlerUrl: undefined }))
+          .toThrow(ConfigurationError)
+
+        expect(disposeSpy).toHaveBeenCalledTimes(1)
+
+        disposeSpy.mockRestore()
       })
     })
   
@@ -1097,6 +1252,7 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
   
         expect(disposableAccount.keyPair.privateKey).toBeNull()
       })
+
     })
   })
 })

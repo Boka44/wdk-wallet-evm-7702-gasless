@@ -22,6 +22,7 @@ For detailed documentation about the complete WDK ecosystem, visit [docs.wdk.tet
 - **Multi-Account Management**: Create and manage multiple wallets from a single seed phrase
 - **ERC20 Support**: Query native token and ERC20 token balances, transfers, and approvals
 - **Automatic Delegation Lifecycle**: Delegation is checked and signed automatically per operation
+- **Pluggable Signers**: Use a seed phrase, a derivable signer, or a private-key signer as the account's owner
 
 ## Installation
 
@@ -114,6 +115,36 @@ const gaslessAccount = new WalletAccountEvm7702Gasless(evmAccount, {
   isSponsored: true
 })
 ```
+
+The wrapped `WalletAccountEvm` is not disposed when the gasless account is disposed.
+
+### Using Signers
+
+The account's owner can be any evm signer, not just a seed phrase. The signers are re-exported from `@tetherto/wdk-wallet-evm-7702-gasless/signers`, so you don't need to install `@tetherto/wdk-wallet-evm` yourself.
+
+```javascript
+import WalletManagerEvm7702Gasless, { WalletAccountEvm7702Gasless } from '@tetherto/wdk-wallet-evm-7702-gasless'
+import { PrivateKeySignerEvm, SeedSignerEvm } from '@tetherto/wdk-wallet-evm-7702-gasless/signers'
+
+// The default signer must be derivable.
+const wallet = new WalletManagerEvm7702Gasless(new SeedSignerEvm(seedPhrase, "m/44'/60'"), config)
+
+// Other signers are registered by name.
+wallet.addSigner('treasury', new PrivateKeySignerEvm(privateKey))
+const treasury = await wallet.getAccount('treasury')
+
+// A derivable signer registered by name derives accounts below its own path.
+wallet.addSigner('bank', new SeedSignerEvm(otherSeedPhrase, "m/44'/60'"))
+const bankAccount = await wallet.getAccount(0, { signerName: 'bank' })
+
+// Standalone accounts, without a wallet manager.
+const account = WalletAccountEvm7702Gasless.fromPrivateKey(privateKey, config)
+```
+
+**Notes:**
+- A wallet created from a seed wipes its default signer on `dispose()`. Signers you supply are never wiped by the wallet, and an account wipes a signer you give it only with `shouldWipeSignerOnDisposal: true`.
+- The account's address is resolved from the signer's `getAddress()` on first use, so signers that only provide their address asynchronously (e.g. hardware signers) are supported.
+- `account.path` and `account.keyPair` are `null` for signers without a derivation path or key material.
 
 ### Managing Multiple Accounts
 
@@ -329,8 +360,10 @@ The main class for managing EIP-7702 gasless wallets. Extends `WalletManager` fr
 
 | Method | Description | Returns |
 |--------|-------------|---------|
-| `getAccount(index)` | Returns a wallet account at the specified index | `Promise<WalletAccountEvm7702Gasless>` |
-| `getAccountByPath(path)` | Returns a wallet account at the specified BIP-44 derivation path | `Promise<WalletAccountEvm7702Gasless>` |
+| `getAccount(index, options?)` | Returns a wallet account at the specified index, optionally below the signer named by `options.signerName` | `Promise<WalletAccountEvm7702Gasless>` |
+| `getAccount(signerName)` | Returns the wallet account of a signer registered via `addSigner`, used as given without deriving | `Promise<WalletAccountEvm7702Gasless>` |
+| `getAccountByPath(path, options?)` | Returns a wallet account at the specified BIP-44 derivation path, optionally below the signer named by `options.signerName` | `Promise<WalletAccountEvm7702Gasless>` |
+| `addSigner(signerName, signer)` | Registers a signer by name | `this` |
 | `getFeeRates()` | Returns current fee rates | `Promise<{normal: bigint, fast: bigint}>` |
 | `dispose()` | Disposes all wallet accounts, clearing private keys from memory | `void` |
 
@@ -340,7 +373,12 @@ Individual gasless wallet account. Extends `WalletAccountReadOnlyEvm7702Gasless`
 
 **Constructor overloads:**
 - `new WalletAccountEvm7702Gasless(seed, path, config)` — standard BIP-44 derivation
-- `new WalletAccountEvm7702Gasless(walletAccountEvm, config)` — wrap an existing `WalletAccountEvm`
+- `new WalletAccountEvm7702Gasless(seed, config)` — derivation at the default path `m/44'/60'/0'/0/0`
+- `new WalletAccountEvm7702Gasless(signer, config)` — use an evm signer (wiped on `dispose()` only with `shouldWipeSignerOnDisposal: true`)
+- `new WalletAccountEvm7702Gasless(walletAccountEvm, config)` — wrap an existing `WalletAccountEvm` (not disposed on `dispose()`)
+
+**Static methods:**
+- `WalletAccountEvm7702Gasless.fromPrivateKey(privateKey, config)` — use a raw private key, wiped on `dispose()`
 
 | Method | Description | Returns |
 |--------|-------------|---------|
@@ -365,9 +403,8 @@ Individual gasless wallet account. Extends `WalletAccountReadOnlyEvm7702Gasless`
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `index` | `number` | The derivation path's index |
-| `path` | `string` | The full derivation path |
-| `keyPair` | `KeyPair` | The account's key pair |
+| `path` | `string \| null` | The full derivation path, or `null` for signers without one |
+| `keyPair` | `KeyPair \| null` | The account's key pair, or `null` for signers without key material |
 
 ### WalletAccountReadOnlyEvm7702Gasless
 

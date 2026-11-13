@@ -1,6 +1,16 @@
 /** @implements {IWalletAccount} */
 export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEvm7702Gasless implements IWalletAccount {
     /**
+     * Creates a new evm 7702 gasless wallet account from a raw private key.
+     *
+     * The account owns the key and wipes it on {@link dispose}.
+     *
+     * @param {string | Uint8Array} privateKey - The raw private key (hex string with or without 0x, or 32 bytes).
+     * @param {Evm7702GaslessWalletConfig} config - The configuration object.
+     * @returns {WalletAccountEvm7702Gasless} The wallet account.
+     */
+    static fromPrivateKey(privateKey: string | Uint8Array, config: Evm7702GaslessWalletConfig): WalletAccountEvm7702Gasless;
+    /**
      * Determines whether a value is an already-signed UserOperation (as returned by `signTransaction`)
      * rather than an unsigned {@link EvmTransaction} (or array of them).
      *
@@ -33,7 +43,27 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      */
     constructor(seed: string | Uint8Array, path: string, config: Evm7702GaslessWalletConfig);
     /**
+     * Creates a new evm 7702 gasless wallet account from a BIP-39 seed at path m/44'/60'/0'/0/0.
+     *
+     * @overload
+     * @param {string | Uint8Array} seed - A BIP-39 mnemonic seed phrase, or a raw BIP-32 master seed (16-64 bytes).
+     * @param {Evm7702GaslessWalletConfig} config - The configuration object.
+     */
+    constructor(seed: string | Uint8Array, config: Evm7702GaslessWalletConfig);
+    /**
+     * Creates a new evm 7702 gasless wallet account using a signer.
+     *
+     * The signer is wiped on {@link dispose} only if `shouldWipeSignerOnDisposal` is set.
+     *
+     * @overload
+     * @param {ISignerEvm} signer - A signer implementing the EVM signer interface.
+     * @param {Evm7702GaslessWalletConfig & SignerOptions} config - The configuration object.
+     */
+    constructor(signer: ISignerEvm, config: Evm7702GaslessWalletConfig & SignerOptions);
+    /**
      * Creates a new evm 7702 gasless wallet account from a wallet-evm account.
+     *
+     * The wallet-evm account is not disposed on {@link dispose}.
      *
      * @overload
      * @param {WalletAccountEvm} account - The wallet-evm account.
@@ -42,6 +72,8 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
     constructor(account: WalletAccountEvm, config: Evm7702GaslessWalletConfig);
     /** @private */
     private _ownerAccount;
+    /** @private */
+    private _shouldWipeOwnerAccountOnDisposal;
     /** @private */
     private _evm7702GaslessReadOnlyAccount;
     /**
@@ -56,17 +88,12 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      */
     private _quoteCache;
     /**
-     * The derivation path's index of this account.
+     * The derivation path of this account (see [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)),
+     * or null if the account's signer is not bound to a BIP-44 position (e.g. private-key signers).
      *
-     * @type {number}
+     * @type {string | null}
      */
-    get index(): number;
-    /**
-     * The derivation path of this account (see [BIP-44](https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki)).
-     *
-     * @type {string}
-     */
-    get path(): string;
+    get path(): string | null;
     /**
      * The account's key pair.
      *
@@ -74,9 +101,15 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
      * it's strongly recommended to treat the key pair as a read-only view of the keys. While it's still technically possible to alter their
      * content, client code should never do so.
      *
-     * @type {KeyPair}
+     * @type {KeyPair | null}
      */
-    get keyPair(): KeyPair;
+    get keyPair(): KeyPair | null;
+    /**
+     * Returns the account's address, which is the owner's address (the EOA delegated through EIP-7702).
+     *
+     * @returns {Promise<string>} The account's address.
+     */
+    getAddress(): Promise<string>;
     /**
      * Signs a message.
      *
@@ -215,6 +248,8 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
 }
 export type IWalletAccount = import("@tetherto/wdk-wallet").IWalletAccount;
 export type KeyPair = import("@tetherto/wdk-wallet-evm").KeyPair;
+export type ISignerEvm = import("@tetherto/wdk-wallet-evm/signers").ISignerEvm;
+export type SignerOptions = import("@tetherto/wdk-wallet-evm").SignerOptions;
 export type EvmTransaction = import("@tetherto/wdk-wallet-evm").EvmTransaction;
 export type TransactionResult = import("@tetherto/wdk-wallet-evm").TransactionResult;
 export type EvmTransferOptions = import("@tetherto/wdk-wallet-evm").EvmTransferOptions;

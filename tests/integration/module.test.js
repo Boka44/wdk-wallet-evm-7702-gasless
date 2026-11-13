@@ -200,7 +200,6 @@ describe('@wdk/wallet-evm-7702-gasless', () => {
   test('should derive accounts with correct properties and 7702 account addresses', async () => {
     const account0 = await wallet.getAccountByPath("0'/0/0")
 
-    expect(account0.index).toBe(ACCOUNT0.index)
     expect(account0.path).toBe(ACCOUNT0.path)
     expect(account0.keyPair).toEqual({
       privateKey: new Uint8Array(Buffer.from(ACCOUNT0.keyPair.privateKey, 'hex')),
@@ -470,10 +469,22 @@ describe('@wdk/wallet-evm-7702-gasless', () => {
   test('should dispose the wallet and erase the private keys of the accounts', async () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
 
-    const account0 = await wallet.getAccount(0)
-    const account1 = await wallet.getAccount(1)
+    // Disposing wipes the default signer, so use a dedicated wallet instead of the shared one.
+    const disposableWallet = new WalletManagerEvm7702Gasless(SEED_PHRASE, {
+      provider: 'http://localhost:8545',
+      bundlerUrl: 'http://localhost:4337',
+      paymasterUrl: 'http://localhost:3000?pimlico',
+      paymasterAddress,
+      delegationAddress: DELEGATION_ADDRESS,
+      paymasterToken: {
+        address: MOCK_PAYMASTER_TOKEN_ADDRESS
+      }
+    })
 
-    wallet.dispose()
+    const account0 = await disposableWallet.getAccount(0)
+    const account1 = await disposableWallet.getAccount(1)
+
+    disposableWallet.dispose()
 
     const MESSAGE = 'Hello, world!'
 
@@ -491,7 +502,7 @@ describe('@wdk/wallet-evm-7702-gasless', () => {
     for (const account of [account0, account1]) {
       expect(account.keyPair.privateKey).toBe(null)
 
-      await expect(account.sign(MESSAGE)).rejects.toThrow('signMessage')
+      await expect(account.sign(MESSAGE)).rejects.toThrow('The account has been disposed.')
       await expect(account.sendTransaction(TRANSACTION)).rejects.toThrow()
       await expect(account.transfer(TRANSFER)).rejects.toThrow()
     }

@@ -4,6 +4,7 @@ export { default as WalletAccountEvm7702Gasless } from "./src/wallet-account-evm
 export { ConfigurationError } from "./src/errors.js";
 export type FeeRates = import("@tetherto/wdk-wallet-evm").FeeRates;
 export type KeyPair = import("@tetherto/wdk-wallet-evm").KeyPair;
+export type SignerOptions = import("@tetherto/wdk-wallet-evm").SignerOptions;
 export type EvmTransaction = import("@tetherto/wdk-wallet-evm").EvmTransaction;
 export type TransactionResult = import("@tetherto/wdk-wallet-evm").TransactionResult;
 export type EvmTransferOptions = import("@tetherto/wdk-wallet-evm").EvmTransferOptions;
