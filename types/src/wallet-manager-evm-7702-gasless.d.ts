@@ -1,8 +1,3 @@
-/** @typedef {import('ethers').Provider} Provider */
-/** @typedef {import('@tetherto/wdk-wallet-evm').FeeRates} FeeRates */
-/** @typedef {import('@tetherto/wdk-wallet-evm/signers').ISignerEvm} ISignerEvm */
-/** @typedef {import('@tetherto/wdk-wallet').NoSuchElementError} NoSuchElementError */
-/** @typedef {import('./wallet-account-evm-7702-gasless.js').Evm7702GaslessWalletConfig} Evm7702GaslessWalletConfig */
 /** @extends {WalletManager<ISignerEvm>} */
 export default class WalletManagerEvm7702Gasless extends WalletManager<ISignerEvm> {
     /**

@@ -31,6 +31,8 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
     let wallet
 
     beforeEach(() => {
+      jest.clearAllMocks()
+
       wallet = new WalletManagerEvm7702Gasless(SEED_PHRASE, SPONSORED_CONFIG)
     })
 
@@ -83,6 +85,21 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         expect(account1.keyPair.privateKey).not.toBeNull()
 
         deriveSpy.mockRestore()
+      })
+
+      test('should return a single account for concurrent calls with a named signer', async () => {
+        const namedSigner = new SeedSignerEvm(OTHER_SEED_PHRASE, "m/44'/60'")
+
+        wallet.addSigner('other', namedSigner)
+
+        const [account1, account2] = await Promise.all([
+          wallet.getAccount(1, { signerName: 'other' }),
+          wallet.getAccountByPath("0'/0/1", { signerName: 'other' })
+        ])
+
+        expect(account1).toBe(account2)
+
+        namedSigner.dispose()
       })
 
       test('should throw if the index is a negative number', async () => {
@@ -166,6 +183,85 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
       })
     })
 
+    describe('with a signer whose address is only known after getAddress()', () => {
+      class LazyAddressSigner {
+        constructor (inner) {
+          this._inner = inner
+          this.address = undefined
+        }
+
+        get isDerivable () { return this._inner.isDerivable }
+        get keyPair () { return this._inner.keyPair }
+        get path () { return this._inner.path }
+
+        async derive (path) {
+          return new LazyAddressSigner(await this._inner.derive(path))
+        }
+
+        async getAddress () {
+          this.address = await this._inner.getAddress()
+          return this.address
+        }
+
+        signTypedData (typedData) { return this._inner.signTypedData(typedData) }
+        dispose () { this._inner.dispose() }
+      }
+
+      let lazySigner
+
+      beforeEach(() => {
+        lazySigner = new LazyAddressSigner(new SeedSignerEvm(SEED_PHRASE, "m/44'/60'"))
+      })
+
+      afterEach(() => {
+        lazySigner.dispose()
+      })
+
+      test('should create the account of a registered signer by name', async () => {
+        wallet.addSigner('lazy', lazySigner)
+
+        const account = await wallet.getAccount('lazy')
+
+        expect(account.path).toBe("m/44'/60'")
+      })
+
+      test('should create derived accounts below a registered signer', async () => {
+        wallet.addSigner('lazy', lazySigner)
+
+        const byIndex = await wallet.getAccount(1, { signerName: 'lazy' })
+        const byPath = await wallet.getAccountByPath("0'/0/2", { signerName: 'lazy' })
+
+        expect(await byIndex.getAddress()).toBe(await (await wallet.getAccount(1)).getAddress())
+        expect(byPath.path).toBe("m/44'/60'/0'/0/2")
+      })
+
+      test('should create derived accounts below the default signer', async () => {
+        const lazyWallet = new WalletManagerEvm7702Gasless(lazySigner, SPONSORED_CONFIG)
+
+        const account = await lazyWallet.getAccount(1)
+
+        expect(await account.getAddress()).toBe(await (await wallet.getAccount(1)).getAddress())
+
+        lazyWallet.dispose()
+      })
+
+      test('should wipe the derived signer on disposal even if its address cannot be resolved', async () => {
+        const getAddressSpy = jest.spyOn(LazyAddressSigner.prototype, 'getAddress').mockRejectedValue(new Error('device locked'))
+
+        wallet.addSigner('lazy', lazySigner)
+
+        const account = await wallet.getAccount(0, { signerName: 'lazy' })
+
+        await expect(account.getAddress()).rejects.toThrow('device locked')
+
+        wallet.dispose()
+
+        expect(account.keyPair.privateKey).toBeNull()
+
+        getAddressSpy.mockRestore()
+      })
+    })
+
     describe('with named signers', () => {
       let privateKeySigner
       let otherSeedSigner
@@ -187,7 +283,10 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
 
         expect(account.path).toBeNull()
         expect(await account.getAddress()).toBe(ACCOUNT_ADDRESS)
-        expect(await wallet.getAccount('pk')).toBe(account)
+      })
+
+      test('should cache the account of a registered signer', async () => {
+        expect(await wallet.getAccount('pk')).toBe(await wallet.getAccount('pk'))
       })
 
       test('should not wipe a registered signer when the wallet is disposed', async () => {
@@ -198,12 +297,23 @@ describe('@tetherto/wdk-wallet-evm-7702-gasless', () => {
         expect(privateKeySigner.keyPair.privateKey).not.toBeNull()
       })
 
-      test('should derive an account below a derivable registered signer and wipe it on disposal', async () => {
+      test('should return the account of a derivable registered signer at its own path, without deriving', async () => {
+        const account = await wallet.getAccount('other')
+
+        expect(account.path).toBe("m/44'/60'")
+      })
+
+      test('should derive an account below a derivable registered signer', async () => {
         const account = await wallet.getAccount(1, { signerName: 'other' })
+        const byPath = await wallet.getAccountByPath("0'/0/1", { signerName: 'other' })
 
         expect(account.path).toBe("m/44'/60'/0'/0/1")
-        expect(await wallet.getAccountByPath("0'/0/1", { signerName: 'other' })).toBe(account)
+        expect(account).toBe(byPath)
         expect(account).not.toBe(await wallet.getAccount(1))
+      })
+
+      test('should wipe the signers derived below a registered signer when the wallet is disposed', async () => {
+        const account = await wallet.getAccount(0, { signerName: 'other' })
 
         wallet.dispose()
 

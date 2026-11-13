@@ -100,10 +100,13 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    * @param {Evm7702GaslessWalletConfig} config - The configuration object.
    */
   constructor (seedOrSignerOrAccount, pathOrConfig, config) {
-    const isOwnerSupplied = seedOrSignerOrAccount instanceof WalletAccountEvm
-    const isSeed = typeof seedOrSignerOrAccount === 'string' || seedOrSignerOrAccount instanceof Uint8Array
+    const overload = seedOrSignerOrAccount instanceof WalletAccountEvm
+      ? 'account'
+      : typeof seedOrSignerOrAccount === 'string' || seedOrSignerOrAccount instanceof Uint8Array
+        ? 'seed'
+        : 'signer'
 
-    const [ownerAccount, resolvedConfig] = isOwnerSupplied
+    const [ownerAccount, resolvedConfig] = overload === 'account'
       ? [seedOrSignerOrAccount, pathOrConfig]
       : [
           new WalletAccountEvm(seedOrSignerOrAccount, pathOrConfig, config),
@@ -113,7 +116,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
     try {
       super(undefined, resolvedConfig)
     } catch (error) {
-      if (isSeed) ownerAccount.dispose()
+      if (overload !== 'account') ownerAccount.dispose()
 
       throw error
     }
@@ -130,10 +133,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
     this._ownerAccount = ownerAccount
 
     /** @private */
-    this._shouldDisposeOwnerAccount = !isOwnerSupplied
-
-    /** @private */
-    this._ownerAddress = undefined
+    this._shouldWipeOwnerAccountOnDisposal = overload !== 'account'
 
     /** @private */
     this._evm7702GaslessReadOnlyAccount = undefined
@@ -161,15 +161,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    * @returns {WalletAccountEvm7702Gasless} The wallet account.
    */
   static fromPrivateKey (privateKey, config) {
-    const signer = new PrivateKeySignerEvm(privateKey)
-
-    try {
-      return new WalletAccountEvm7702Gasless(signer, { ...config, shouldWipeSignerOnDisposal: true })
-    } catch (error) {
-      signer.dispose()
-
-      throw error
-    }
+    return new WalletAccountEvm7702Gasless(new PrivateKeySignerEvm(privateKey), { ...config, shouldWipeSignerOnDisposal: true })
   }
 
   /**
@@ -201,9 +193,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
    * @returns {Promise<string>} The account's address.
    */
   async getAddress () {
-    this._ownerAddress ??= await this._ownerAccount.getAddress()
-
-    return this._ownerAddress
+    return await this._ownerAccount.getAddress()
   }
 
   /**
@@ -467,7 +457,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
   dispose () {
     this._quoteCache.clear()
 
-    if (this._shouldDisposeOwnerAccount) {
+    if (this._shouldWipeOwnerAccountOnDisposal) {
       this._ownerAccount.dispose()
     }
   }

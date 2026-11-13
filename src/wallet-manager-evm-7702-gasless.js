@@ -173,13 +173,7 @@ export default class WalletManagerEvm7702Gasless extends WalletManager {
       if (this._accounts[key]) {
         childSigner.dispose()
       } else {
-        try {
-          this._accounts[key] = new WalletAccountEvm7702Gasless(childSigner, { ...this._accountConfig(), shouldWipeSignerOnDisposal: true })
-        } catch (error) {
-          childSigner.dispose()
-
-          throw error
-        }
+        this._accounts[key] = new WalletAccountEvm7702Gasless(childSigner, { ...this._accountConfig(), shouldWipeSignerOnDisposal: true })
       }
     }
 

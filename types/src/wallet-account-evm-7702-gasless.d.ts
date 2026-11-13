@@ -73,9 +73,7 @@ export default class WalletAccountEvm7702Gasless extends WalletAccountReadOnlyEv
     /** @private */
     private _ownerAccount;
     /** @private */
-    private _shouldDisposeOwnerAccount;
-    /** @private */
-    private _ownerAddress;
+    private _shouldWipeOwnerAccountOnDisposal;
     /** @private */
     private _evm7702GaslessReadOnlyAccount;
     /**
